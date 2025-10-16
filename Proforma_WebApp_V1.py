@@ -60,7 +60,7 @@ for i in Item_Accounting_table.index:
 
 #Input Table of Excel Sheet: to be revised
 Input_table = {
-    "Units/Rank": [MRU_count, ranking_Housing_Micro, ranking_InBuilding_Grocery, ranking_InBuilding_CommunityCenter, ranking_OffSite_ParkPlaza],
+    "Units/Rank": [MRU_count_initial, ranking_Housing_Micro, ranking_InBuilding_Grocery, ranking_InBuilding_CommunityCenter, ranking_OffSite_ParkPlaza],
     "Net Profit/Year/SqFt": [0, 0, 0, 0, 0],
     "MRU_Add": [0, 0, 0, 0, 0]
 }
@@ -126,12 +126,12 @@ for i in MRU_Add_Table.index:
 
 
 #Write Tables
-st.write("Item Accounting Table")
-st.dataframe(Item_Accounting_table)
-st.write("Input Table")
-st.dataframe(Input_table)
-st.write("Extra Market Rate Units Chart")
-st.write(MRU_Add_Table)
+# st.write("Item Accounting Table")
+# st.dataframe(Item_Accounting_table)
+# st.write("Input Table")
+# st.dataframe(Input_table)
+# st.write("Extra Market Rate Units Chart")
+# st.write(MRU_Add_Table)
 
 
 #This section builds the output formulas for ChatGPT. For each amenity type, it builds a chart that shows for this many items of each community benefit, here is the IRR, NPV, and cost associated with that item PLUS the MRU add.
@@ -173,7 +173,7 @@ GPTOutputTable_InBuilding_Grocery = GPTOutputTable_Builder(0, 6, 1, "Grocery Sto
 GPTOutputTable_InBuilding_CommunityCenter = GPTOutputTable_Builder(0, 6, 1, "Community Center")
 GPTOutputTable_OffSite_ParkPlaza = GPTOutputTable_Builder(0, 6, 1, "Park/Plaza")
 
-
+#These are the outputs for ChatGPT
 st.write("Output Table Housing Micro")
 st.write(GPTOutputTable_Housing_Micro)
 st.write("Output Table Grocery Store")
@@ -188,23 +188,45 @@ st.write(GPTOutputTable_OffSite_ParkPlaza)
 #The results from ChatGPT then need to be re-inputted into the pro forma, here.
 
 Final_Build_Table = pd.DataFrame({
-    "Number": [MRU_count_initial, 20, 0, 1, 0]
+    "Number": [MRU_count_initial, 0, 0, 0, 0],
     "Size": [0, 0, 0, 0, 0]
 }, index=Input_table.index)
 for i in Final_Build_Table.index:
-    if i == "MRU":
-        continue
-    else:
-        MRU_Add_Table.loc[item, "Extra MRU From Rankings"] * (1 + np.log(Final_Build_Table.loc[i, "Number"]))
+    if i != "MRU" and Final_Build_Table.loc[i, "Number"] != 0:
+        Final_Build_Table.loc["MRU", "Number"] += MRU_Add_Table.loc[i, "Extra MRU From Rankings"] * (1 + np.log(Final_Build_Table.loc[i, "Number"]))
+Final_Build_Table.loc["MRU", "Number"] = np.round(Final_Build_Table.loc["MRU", "Number"])
+for i in Final_Build_Table.index:
+    Final_Build_Table.loc[i, "Size"] = Item_Accounting_table.loc[i, "Size"]*Final_Build_Table.loc[i, "Number"]
 
-#Need to iterate over again to figure out size, since first we need MRU number and then we can calculate size
+#Here, sum up the "height" column and divide by our land size (9000, maybe should be set as a variable?) to get final floor number, and then round up.
+#The final build table, plus the height, should be sent to Adrian for the 3d visualization.
 
 st.write("Final Build Table")
 st.write(Final_Build_Table)
 
 
+#This code writes the final financial table, which calculates overall revenue, upkeep, NOI, etc, culminating in pre-tax cash flow.
+#We then use pre-tax cash flor to calculate various financial metrics in our final display table.
+Master_Financial_Table = pd.DataFrame(index=range(8), columns=range(11))
+Master_Financial_Table.index = ["Revenue", "Upkeep", "Hard Costs", "Soft Costs", "Land Costs", "NOI", "Other Expenses", "Pre-Tax Cash Flow"]
+Master_Financial_Table = Master_Financial_Table.fillna(0)
+for item in Final_Build_Table.index:
+    Master_Financial_Table.loc["Revenue"] += NOI_table_builder(item, "Rent")*Final_Build_Table.loc[item, "Number"]
+    Master_Financial_Table.loc["Upkeep"] += NOI_table_builder(item, "Upkeep")*Final_Build_Table.loc[item, "Number"]
+    Master_Financial_Table.loc["Hard Costs", 0] += Final_Build_Table.loc[item, "Number"]*Item_Accounting_table.loc[item, "Construction_cost"]
+Master_Financial_Table.loc["Soft Costs", 0] = Master_Financial_Table.loc["Hard Costs", 0] * soft_costs
+Master_Financial_Table.loc["Land Costs", 0] = Item_Accounting_table.loc["Land", "Size"] * Item_Accounting_table.loc["Land", "Construction_cost"]
+for period in Master_Financial_Table.columns:
+    Master_Financial_Table.loc["NOI", period] = Master_Financial_Table.loc[["Revenue", "Hard Costs", "Soft Costs", "Land Costs", "Upkeep"], period].sum()
+    Master_Financial_Table.loc["Other Expenses", period] = Other_expenses
+    Master_Financial_Table.loc["Pre-Tax Cash Flow", period] = Master_Financial_Table.loc["NOI", period] + Master_Financial_Table.loc["Other Expenses", period]
+# st.write(Master_Financial_Table)
 
+Final_Display = pd.DataFrame(index = ["Stories", "MRU Stories", "NPV", "IRR", "Likelihood of Construction"], columns = ["Value"])
+Final_Display.loc["Stories"] = np.ceil(Final_Build_Table.loc[:, "Size"].sum()/Item_Accounting_table.loc["Land", "Size"])
+Final_Display.loc["MRU Stories"] = (Final_Build_Table.loc["MRU", "Size"]/Item_Accounting_table.loc["Land", "Size"])
+Final_Display.loc["NPV"] = nf.npv(Discount_rate, Master_Financial_Table.loc["Pre-Tax Cash Flow", :])
+Final_Display.loc["IRR"] = nf.irr(Master_Financial_Table.loc["Pre-Tax Cash Flow", :])
+Final_Display.loc["Likelihood of Construction"] = 1/(1+np.e**(-55*(Final_Display.loc["IRR", "Value"]-0.1)))
 
-#MRUAdd = MRU_Add_Table.loc[item, "Extra MRU From Rankings"] * (1 + np.log(log_arg))
-
-
+st.write(Final_Display)
