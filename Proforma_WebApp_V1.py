@@ -13,7 +13,7 @@ st.markdown("Instructions: use the sliders to select the priority for each commu
 st.header("Control Panel")
 
 #Assorted Items
-MRU_count = 48
+MRU_count_initial = 48
 soft_costs = 0.22
 Rent_increase = 0.10
 Upkeep_increase = 0.04
@@ -187,12 +187,24 @@ st.write(GPTOutputTable_OffSite_ParkPlaza)
 
 #The results from ChatGPT then need to be re-inputted into the pro forma, here.
 
-#test changes
+Final_Build_Table = pd.DataFrame({
+    "Number": [MRU_count_initial, 20, 0, 1, 0]
+    "Size": [0, 0, 0, 0, 0]
+}, index=Input_table.index)
+for i in Final_Build_Table.index:
+    if i == "MRU":
+        continue
+    else:
+        MRU_Add_Table.loc[item, "Extra MRU From Rankings"] * (1 + np.log(Final_Build_Table.loc[i, "Number"]))
+
+#Need to iterate over again to figure out size, since first we need MRU number and then we can calculate size
+
+st.write("Final Build Table")
+st.write(Final_Build_Table)
 
 
 
 
-
-
+#MRUAdd = MRU_Add_Table.loc[item, "Extra MRU From Rankings"] * (1 + np.log(log_arg))
 
 
