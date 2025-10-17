@@ -1,16 +1,9 @@
-#To run: streamlit run [filename].py
+#Files V1.1 is intended to act as a compartmentalized version of V1.0.
+#This file, V1.1p1, is part 1 of the code. This is the code that takes in the inputs from Yasushi's sliders and outputs results that are meant to be sent to Alan's ChatGPT API.
 
-import streamlit as st
 import pandas as pd
 import numpy as np
 import numpy_financial as nf
-
-st.title("Dynamic Zoning Simulation")
-st.caption("Most Simple Pro Forma Web App Version 1")
-st.markdown("This activity simulates the activity of a real estate developer on a 9000 SqFt land plot in San Francisco. Based on policy inputs, their decision on what to built will change.")
-st.markdown("Instructions: use the sliders to select the priority for each community benefit. This will affect the financial incentives for the developr, and affect what gets built. A greater priority means more market-rate apartment units are permitted for the developer, to make up the loss; however, be aware that apartment units and some amenities increase building height.")
-
-st.header("Control Panel")
 
 #Assorted Items
 MRU_count_initial = 48
@@ -26,22 +19,13 @@ Exit_value_multiple = 20
 def rank_to_profit (rank):
     return 0.2*(rank/10)**2
 
-st.subheader("Micro Units")
-ranking_Housing_Micro = st.slider("For Young Professionals", min_value=1, max_value=10, value=5)
-st.write("Additional Profit: ", round(rank_to_profit(ranking_Housing_Micro)*100, 2), "%")
-
-st.subheader("Grocery Store")
-ranking_InBuilding_Grocery = st.slider("On-Site Grocery Store", min_value=1, max_value=10, value=5)
-st.write("Additional Profit: ", round(rank_to_profit(ranking_InBuilding_Grocery)*100, 2), "%")
-
-
-st.subheader("Community Center")
-ranking_InBuilding_CommunityCenter = st.slider("Gathering Place for Community", min_value=1, max_value=10, value=5)
-st.write("Additional Profit: ", round(rank_to_profit(ranking_InBuilding_CommunityCenter)*100, 2), "%")
-
-st.subheader("Park/Plaza")
-ranking_OffSite_ParkPlaza = st.slider("Off-site Public Area", min_value=1, max_value=10, value=5)
-st.write("Additional Profit: ", round(rank_to_profit(ranking_OffSite_ParkPlaza)*100, 2), "%")
+#Here is where we would have the rankings from Yasushi's slider.
+#These originally were written with streamlit in V1.0, but as long as the rankings are translated to these variables, the code works.
+#Right now I set them all to 5.
+ranking_Housing_Micro = 5
+ranking_InBuilding_Grocery = 5
+ranking_InBuilding_CommunityCenter = 5
+ranking_OffSite_ParkPlaza = 5
 
 #Item Accounting Table of Excel Sheet
 Item_Accounting_table = {
@@ -124,16 +108,6 @@ for i in MRU_Add_Table.index:
     Item_Accounting_table.loc[i, "MRU_add_per_unit"] = MRU_Add_Table.loc[i, "Extra MRU From Rankings"]
 
 
-
-#Write Tables
-# st.write("Item Accounting Table")
-# st.dataframe(Item_Accounting_table)
-# st.write("Input Table")
-# st.dataframe(Input_table)
-# st.write("Extra Market Rate Units Chart")
-# st.write(MRU_Add_Table)
-
-
 #This section builds the output formulas for ChatGPT. For each amenity type, it builds a chart that shows for this many items of each community benefit, here is the IRR, NPV, and cost associated with that item PLUS the MRU add.
 def GPTOutputTable_Builder(min_units, max_units, step, item):
     cols = list(range(min_units, max_units, step))
@@ -167,66 +141,9 @@ def GPTOutputTable_Builder(min_units, max_units, step, item):
 
 #These four tables should be exported to Alan's ChatGPT API, along with a prompt of something along the following:
 #"You are a real estate developer in [city]. In addition to what you already have approved, you can add the following community amenities (micro-unit housing, grocery store, community center, or funding for an off-site plaza), with the quantities and resulting IRR, NPV, and initial costs in the charts below.
-# With this information, return a chart of how many of each amenity you would build. The first column should be labeled 'Micro Units', 'Grocery Store', 'Community Center', and 'Park/Plaza', and the second column should list how many of each amenity you decide to build."
+# With this information, return a 2-row 1-column DataFrame of how many of each amenity you would build. The index should be labeled 'Micro Units', 'Grocery Store', 'Community Center', and 'Park/Plaza', and the only column should list how many of each amenity you decide to build. The column should remain unnamed."
+GPTOutputTable_Prompt = "You are a real estate developer in San Francisco. In addition to what you already have approved by the city, you can add the following community amenities (micro-unit housing, grocery store, community center, or funding for an off-site plaza), with the quantities and resulting IRR, NPV, and initial costs in the charts below. With this information, return a 2-row 1-column DataFrame of how many of each amenity you would build. The index should be labeled 'Micro Units', 'Grocery Store', 'Community Center', and 'Park/Plaza', and the only column should list how many of each amenity you decide to build. The column should remain unnamed."
 GPTOutputTable_Housing_Micro = GPTOutputTable_Builder(5, 51, 5, "Micro Units")
 GPTOutputTable_InBuilding_Grocery = GPTOutputTable_Builder(0, 6, 1, "Grocery Store")
 GPTOutputTable_InBuilding_CommunityCenter = GPTOutputTable_Builder(0, 6, 1, "Community Center")
 GPTOutputTable_OffSite_ParkPlaza = GPTOutputTable_Builder(0, 6, 1, "Park/Plaza")
-
-#These are the outputs for ChatGPT
-st.write("Output Table Housing Micro")
-st.write(GPTOutputTable_Housing_Micro)
-st.write("Output Table Grocery Store")
-st.write(GPTOutputTable_InBuilding_Grocery)
-st.write("Output Table Community Center")
-st.write(GPTOutputTable_InBuilding_CommunityCenter)
-st.write("Output Table Park/Plaza")
-st.write(GPTOutputTable_OffSite_ParkPlaza)
-
-
-
-#The results from ChatGPT then need to be re-inputted into the pro forma, here.
-
-Final_Build_Table = pd.DataFrame({
-    "Number": [MRU_count_initial, 0, 0, 0, 0],
-    "Size": [0, 0, 0, 0, 0]
-}, index=Input_table.index)
-for i in Final_Build_Table.index:
-    if i != "MRU" and Final_Build_Table.loc[i, "Number"] != 0:
-        Final_Build_Table.loc["MRU", "Number"] += MRU_Add_Table.loc[i, "Extra MRU From Rankings"] * (1 + np.log(Final_Build_Table.loc[i, "Number"]))
-Final_Build_Table.loc["MRU", "Number"] = np.round(Final_Build_Table.loc["MRU", "Number"])
-for i in Final_Build_Table.index:
-    Final_Build_Table.loc[i, "Size"] = Item_Accounting_table.loc[i, "Size"]*Final_Build_Table.loc[i, "Number"]
-
-#Here, sum up the "height" column and divide by our land size (9000, maybe should be set as a variable?) to get final floor number, and then round up.
-#The final build table, plus the height, should be sent to Adrian for the 3d visualization.
-
-st.write("Final Build Table")
-st.write(Final_Build_Table)
-
-
-#This code writes the final financial table, which calculates overall revenue, upkeep, NOI, etc, culminating in pre-tax cash flow.
-#We then use pre-tax cash flor to calculate various financial metrics in our final display table.
-Master_Financial_Table = pd.DataFrame(index=range(8), columns=range(11))
-Master_Financial_Table.index = ["Revenue", "Upkeep", "Hard Costs", "Soft Costs", "Land Costs", "NOI", "Other Expenses", "Pre-Tax Cash Flow"]
-Master_Financial_Table = Master_Financial_Table.fillna(0)
-for item in Final_Build_Table.index:
-    Master_Financial_Table.loc["Revenue"] += NOI_table_builder(item, "Rent")*Final_Build_Table.loc[item, "Number"]
-    Master_Financial_Table.loc["Upkeep"] += NOI_table_builder(item, "Upkeep")*Final_Build_Table.loc[item, "Number"]
-    Master_Financial_Table.loc["Hard Costs", 0] += Final_Build_Table.loc[item, "Number"]*Item_Accounting_table.loc[item, "Construction_cost"]
-Master_Financial_Table.loc["Soft Costs", 0] = Master_Financial_Table.loc["Hard Costs", 0] * soft_costs
-Master_Financial_Table.loc["Land Costs", 0] = Item_Accounting_table.loc["Land", "Size"] * Item_Accounting_table.loc["Land", "Construction_cost"]
-for period in Master_Financial_Table.columns:
-    Master_Financial_Table.loc["NOI", period] = Master_Financial_Table.loc[["Revenue", "Hard Costs", "Soft Costs", "Land Costs", "Upkeep"], period].sum()
-    Master_Financial_Table.loc["Other Expenses", period] = Other_expenses
-    Master_Financial_Table.loc["Pre-Tax Cash Flow", period] = Master_Financial_Table.loc["NOI", period] + Master_Financial_Table.loc["Other Expenses", period]
-# st.write(Master_Financial_Table)
-
-Final_Display = pd.DataFrame(index = ["Stories", "MRU Stories", "NPV", "IRR", "Likelihood of Construction"], columns = ["Value"])
-Final_Display.loc["Stories"] = np.ceil(Final_Build_Table.loc[:, "Size"].sum()/Item_Accounting_table.loc["Land", "Size"])
-Final_Display.loc["MRU Stories"] = (Final_Build_Table.loc["MRU", "Size"]/Item_Accounting_table.loc["Land", "Size"])
-Final_Display.loc["NPV"] = nf.npv(Discount_rate, Master_Financial_Table.loc["Pre-Tax Cash Flow", :])
-Final_Display.loc["IRR"] = nf.irr(Master_Financial_Table.loc["Pre-Tax Cash Flow", :])
-Final_Display.loc["Likelihood of Construction"] = 1/(1+np.e**(-55*(Final_Display.loc["IRR", "Value"]-0.1)))
-
-st.write(Final_Display)
