@@ -1,9 +1,12 @@
 #To run: streamlit run [filename].py
 
+#Changes: scaling, making sliders more sensitive (20 --> 30% max)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import numpy_financial as nf
+import altair as alt
 
 st.title("Dynamic Zoning Simulation")
 st.caption("Most Simple Pro Forma Web App Version 1")
@@ -11,6 +14,12 @@ st.markdown("This activity simulates the activity of a real estate developer on 
 st.markdown("Instructions: use the sliders to select the priority for each community benefit. This will affect the financial incentives for the developr, and affect what gets built. A greater priority means more market-rate apartment units are permitted for the developer, to make up the loss; however, be aware that apartment units and some amenities increase building height.")
 
 st.header("Control Panel")
+
+#Scaling Values
+Scaling_Grocery_Rent = 0.1
+Scaling_ParkPlaza_MRUAdd = 2.15
+Scaling_Micro_MRUAdd = 2
+Scaling_CommunityCenter_MRUAdd = 0.75
 
 #Assorted Items
 MRU_count_initial = 48
@@ -24,7 +33,7 @@ Exit_value_multiple = 20
 
 #Sliders. Change code here (specifically st.slider) when using the physical slider.
 def rank_to_profit (rank):
-    return 0.2*(rank/10)**2
+    return 0.3*(rank/10)**2 #used to be 0.2, if problematic change here
 
 st.subheader("Micro Units")
 ranking_Housing_Micro = st.slider("For Young Professionals", min_value=1, max_value=10, value=5)
@@ -33,7 +42,6 @@ st.write("Additional Profit: ", round(rank_to_profit(ranking_Housing_Micro)*100,
 st.subheader("Grocery Store")
 ranking_InBuilding_Grocery = st.slider("On-Site Grocery Store", min_value=1, max_value=10, value=5)
 st.write("Additional Profit: ", round(rank_to_profit(ranking_InBuilding_Grocery)*100, 2), "%")
-
 
 st.subheader("Community Center")
 ranking_InBuilding_CommunityCenter = st.slider("Gathering Place for Community", min_value=1, max_value=10, value=5)
@@ -57,6 +65,11 @@ Item_Accounting_table.index = ["Land", "MRU", "Micro Units", "Grocery Store", "C
 for i in Item_Accounting_table.index:
     Item_Accounting_table.loc[i, "Soft_Costs"] = Item_Accounting_table.loc[i, "Construction_cost"] * soft_costs
 
+Item_Accounting_table.loc["Grocery Store", "Rent_yearly"] = Item_Accounting_table.loc["Grocery Store", "Rent_yearly"]*Scaling_Grocery_Rent #Grocery Scaling
+
+
+
+
 
 #Input Table of Excel Sheet: to be revised
 Input_table = {
@@ -71,8 +84,6 @@ for i in Item_Accounting_table.index[1:]:
         Input_table.loc[i, "Net Profit/Year/SqFt"] = (Item_Accounting_table.loc[i, "Rent_yearly"]+Item_Accounting_table.loc[i, "Upkeep_yearly"])/Item_Accounting_table.loc[i, "Size"]
     else:
         Input_table.loc[i, "Net Profit/Year/SqFt"] = 0
-
-
 
 
 #NOI Tables. This function returns the 
@@ -119,9 +130,36 @@ for i in MRU_Add_Table.index:
         MRU_Add_Table.loc[i, "Scaled for Size"] = MRU_Add_Table.loc[i, "MRU Break Even"]
         MRU_Add_Table.loc[i, "Extra MRU From Rankings"] = MRU_Add_Table.loc[i, "Scaled for Size"]*(1+rank_to_profit(Input_table.loc[i, "Units/Rank"])) #this is the same as "Base Extra MRU Percent" in MSPF 4.2 "Natural Log Testing Stuff" sheet
 
+#Scaling
+MRU_Add_Table.loc["Park/Plaza", "Extra MRU From Rankings"] = MRU_Add_Table.loc["Park/Plaza", "Extra MRU From Rankings"] * Scaling_ParkPlaza_MRUAdd
+MRU_Add_Table.loc["Micro Units", "Extra MRU From Rankings"] = MRU_Add_Table.loc["Micro Units", "Extra MRU From Rankings"] * Scaling_Micro_MRUAdd
+MRU_Add_Table.loc["Community Center", "Extra MRU From Rankings"] = MRU_Add_Table.loc["Community Center", "Extra MRU From Rankings"] * Scaling_CommunityCenter_MRUAdd
+
+
+
+#Debugging
+# st.subheader("Plaza MRU Add Scaler")
+# Debug_ParkPlaza_MRUAdd_Slider = st.slider("Debugging: Park/Plaza MRU Add Slider", min_value=100, max_value=300, value=200)
+# st.write("Plaza MRU Percentage: ", Debug_ParkPlaza_MRUAdd_Slider, "%")
+# MRU_Add_Table.loc["Park/Plaza", "Extra MRU From Rankings"] = MRU_Add_Table.loc["Park/Plaza", "Extra MRU From Rankings"] * Debug_ParkPlaza_MRUAdd_Slider/100
+
+# st.subheader("Community Center MRU Add Scaler")
+# Debug_CommunityCenter_MRUAdd_Slider = st.slider("Debugging: Community Center MRU Add Slider", min_value=1, max_value=200, value=100)
+# st.write("Community Center MRU Percentage: ", Debug_CommunityCenter_MRUAdd_Slider, "%")
+# MRU_Add_Table.loc["Community Center", "Extra MRU From Rankings"] = MRU_Add_Table.loc["Community Center", "Extra MRU From Rankings"] * Debug_CommunityCenter_MRUAdd_Slider/100
+
+
 #Update older tables with MRU add numbers
 for i in MRU_Add_Table.index:
     Item_Accounting_table.loc[i, "MRU_add_per_unit"] = MRU_Add_Table.loc[i, "Extra MRU From Rankings"]
+
+
+#More Debugging, delete later
+# st.subheader("Debugging Grocery Slider IRR")
+# Debug_GroceryStore_IRR_Scaling_Slider = st.slider("Debugging: Grocery Store IRR Scaler", min_value=1, max_value=10, value=5)
+# st.write("Debugging Grocery Store IRR Percent: ", Debug_GroceryStore_IRR_Scaling_Slider*10, "%")
+# MRU_Add_Table.loc["Grocery Store", "Extra MRU From Rankings"] = MRU_Add_Table.loc["Grocery Store", "Extra MRU From Rankings"] * Debug_GroceryStore_IRR_Scaling_Slider/100
+# Item_Accounting_table.loc["Grocery Store", "MRU_add_per_unit"] = MRU_Add_Table.loc["Grocery Store", "Extra MRU From Rankings"]
 
 
 
@@ -174,14 +212,116 @@ GPTOutputTable_InBuilding_CommunityCenter = GPTOutputTable_Builder(0, 6, 1, "Com
 GPTOutputTable_OffSite_ParkPlaza = GPTOutputTable_Builder(0, 6, 1, "Park/Plaza")
 
 #These are the outputs for ChatGPT
-st.write("Output Table Housing Micro")
-st.write(GPTOutputTable_Housing_Micro)
-st.write("Output Table Grocery Store")
-st.write(GPTOutputTable_InBuilding_Grocery)
-st.write("Output Table Community Center")
-st.write(GPTOutputTable_InBuilding_CommunityCenter)
-st.write("Output Table Park/Plaza")
-st.write(GPTOutputTable_OffSite_ParkPlaza)
+# st.write("Output Table Housing Micro")
+# st.write(GPTOutputTable_Housing_Micro)
+# st.write("Output Table Grocery Store")
+# st.write(GPTOutputTable_InBuilding_Grocery)
+# st.write("Output Table Community Center")
+# st.write(GPTOutputTable_InBuilding_CommunityCenter)
+# st.write("Output Table Park/Plaza")
+# st.write(GPTOutputTable_OffSite_ParkPlaza)
+
+#Debugging Start aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+# Helper: return the first 6 IRR values from a GPTOutputTable_*
+def _first_six_irrs(df: pd.DataFrame) -> list[float]:
+    # ensure columns are sorted numerically, then take first six
+    cols = sorted(df.columns)[:6]
+    return df.loc['IRR', cols].tolist()
+
+# Build the wide table
+IRR_first6 = pd.DataFrame(
+    [
+        _first_six_irrs(GPTOutputTable_Housing_Micro),
+        _first_six_irrs(GPTOutputTable_InBuilding_Grocery),
+        _first_six_irrs(GPTOutputTable_InBuilding_CommunityCenter),
+        _first_six_irrs(GPTOutputTable_OffSite_ParkPlaza),
+    ],
+    index=['Micro Units', 'Grocery Store', 'Community Center', 'Park/Plaza'],
+    columns=[f'Period {i+1}' for i in range(6)]
+)
+
+# st.subheader("IRR (first 6 periods)")
+# st.dataframe(IRR_first6.style.format("{:.4f}"))
+
+# Optional: tidy / long format (Amenity, Period, IRR)
+IRR_first6_long = (
+    IRR_first6
+    .reset_index()
+    .melt(id_vars='index', var_name='Period', value_name='IRR')
+    .rename(columns={'index': 'Amenity'})
+)
+# st.dataframe(IRR_first6_long)
+
+
+# If you used the helper from before:
+# IRR_first6_long has columns: Amenity | Period | IRR
+
+# st.subheader("IRR (first 6 periods) — Interactive")
+chart = (
+    alt.Chart(IRR_first6_long)
+    .mark_line(point=True)
+    .encode(
+        x=alt.X('Period:N', title='Period'),         # if your columns are unit counts, use ':Q' and title='Units'
+        y=alt.Y('IRR:Q', title='IRR', axis=alt.Axis(format='%')),
+        color=alt.Color('Amenity:N', title='Amenity'),
+        tooltip=['Amenity', 'Period', alt.Tooltip('IRR:Q', format='.2%')]
+    )
+    .properties(height=380)
+    .interactive()
+)
+
+st.altair_chart(chart, use_container_width=True)
+
+
+
+# Helper: extract first 6 NPV values from a GPTOutputTable
+def _first_six_npvs(df: pd.DataFrame) -> list[float]:
+    cols = sorted(df.columns)[:6]  # first 6 columns (periods)
+    return df.loc['NPV', cols].tolist()
+
+# Assemble them into one dataframe
+NPV_first6 = pd.DataFrame(
+    [
+        _first_six_npvs(GPTOutputTable_Housing_Micro),
+        _first_six_npvs(GPTOutputTable_InBuilding_Grocery),
+        _first_six_npvs(GPTOutputTable_InBuilding_CommunityCenter),
+        _first_six_npvs(GPTOutputTable_OffSite_ParkPlaza),
+    ],
+    index=['Micro Units', 'Grocery Store', 'Community Center', 'Park/Plaza'],
+    columns=[f'Period {i+1}' for i in range(6)]
+)
+
+# st.subheader("NPV (first 6 periods)")
+# st.dataframe(NPV_first6.style.format("${:,.0f}"))
+
+NPV_first6_long = (
+    NPV_first6
+    .reset_index()
+    .melt(id_vars='index', var_name='Period', value_name='NPV')
+    .rename(columns={'index': 'Amenity'})
+)
+
+# st.subheader("NPV (first 6 periods) — Interactive Chart")
+chart = (
+    alt.Chart(NPV_first6_long)
+    .mark_line(point=True)
+    .encode(
+        x=alt.X('Period:N', title='Period'),
+        y=alt.Y('NPV:Q', title='Net Present Value', axis=alt.Axis(format='$,.0f')),
+        color=alt.Color('Amenity:N', title='Amenity'),
+        tooltip=['Amenity', 'Period', alt.Tooltip('NPV:Q', format='$,.0f')]
+    )
+    .properties(height=380)
+    .interactive()
+)
+st.altair_chart(chart, use_container_width=True)
+
+
+
+#Debugging End aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+
 
 
 

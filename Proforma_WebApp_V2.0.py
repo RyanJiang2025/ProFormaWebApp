@@ -11,22 +11,12 @@ import altair as alt
 
 st.set_page_config(layout="wide")
 
-# Custom CSS to widen the page
-# st.markdown("""
-#     <style>
-#         .main {
-#             max-width: 1400px;
-#         }
-#         .block-container {
-#             max-width: 1400px;
-#         }
-#     </style>
-# """, unsafe_allow_html=True)
 
 # =============================================================================
 # CALCULATION FUNCTIONS
 # =============================================================================
 
+#Note for future reference: MRU stands for Market Rate Unit. Later versions changed the public-facing dataframes from "MRU" to "Market Rate Housing", however the coding still largely uses "MRU".
 
 #Scaling Values
 Scaling_Grocery_Rent = 0.1
@@ -54,7 +44,7 @@ def rank_to_profit (rank):
 def get_ranking_functions():
     """Returns all ranking functions as a tuple for assignment to variables outside the function."""
     # if st.session_state.toggle:
-    st.subheader("Affordable Housing")
+    st.subheader("Affordable Housing (1 unit = 5 housing units)")
     ranking_Housing_Affordable = st.slider("Subsidized Rent by 50%. Otherwise the same as a Market Rate Unit", min_value=1, max_value=10, value=5)
     st.write("Developer Compensation Rate: ", round(rank_to_profit(ranking_Housing_Affordable)*100, 2), "%")
 
@@ -70,8 +60,8 @@ def get_ranking_functions():
     ranking_OffSite_ParkPlaza = st.slider("Off-site Public Area, Open Air Space", min_value=1, max_value=10, value=5)
     st.write("Developer Compensation Rate: ", round(rank_to_profit(ranking_OffSite_ParkPlaza)*100, 2), "%")
 
-    st.subheader("CommunityFund ($100,000 Increment)")
-    ranking_Fund = st.slider("Fund for community improvements. ", min_value=1, max_value=10, value=5)
+    st.subheader("Community Fund (1 unit = $100,000)")
+    ranking_Fund = st.slider("Fund for community improvements. Paid for in incremenets of $100,000.", min_value=1, max_value=10, value=5)
     st.write("Developer Compensation Rate: ", round(rank_to_profit(ranking_Fund)*100, 2), "%")
     
     return (ranking_Housing_Affordable, ranking_InBuilding_Grocery, ranking_InBuilding_CommunityCenter, ranking_OffSite_ParkPlaza, ranking_Fund)
@@ -91,7 +81,7 @@ def get_item_accounting_table():
         "MRU_add_per_unit": [0, 0, 0, 0, 0, 0, 0]
     }
     Item_Accounting_table = pd.DataFrame(Item_Accounting_table)
-    Item_Accounting_table.index = ["Land", "MRU", "Affordable Housing", "Grocery Store", "Community Center", "Park/Plaza", "Fund"]
+    Item_Accounting_table.index = ["Land", "Market Rate Housing", "Affordable Housing", "Grocery Store", "Community Center", "Park/Plaza", "Fund"]
     for i in Item_Accounting_table.index:
         Item_Accounting_table.loc[i, "Soft_Costs"] = Item_Accounting_table.loc[i, "Construction_cost"] * soft_costs
 
@@ -110,7 +100,7 @@ def get_input_table(Item_Accounting_table):
         "Net Profit/Year/SqFt": [0, 0, 0, 0, 0, 0]
     }
     Input_table = pd.DataFrame(Input_table)
-    Input_table.index = ["MRU", "Affordable Housing", "Grocery Store", "Community Center", "Park/Plaza", "Fund"]
+    Input_table.index = ["Market Rate Housing", "Affordable Housing", "Grocery Store", "Community Center", "Park/Plaza", "Fund"]
     for i in Item_Accounting_table.index[1:]:
         if Item_Accounting_table.loc[i, "Size"] != 0:
             Input_table.loc[i, "Net Profit/Year/SqFt"] = (Item_Accounting_table.loc[i, "Rent_yearly"]+Item_Accounting_table.loc[i, "Upkeep_yearly"])/Item_Accounting_table.loc[i, "Size"]
@@ -151,17 +141,17 @@ def get_MRU_Add_table(Item_Accounting_table, Input_table):
     for i in MRU_Add_Table.index:
         if Item_Accounting_table.loc [i, "Size"] != 0: #This is for all calculations except for off-site items
             MRU_Add_Table.loc[i, "NPV/SqFt"] = nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, i, "NOI"))/Item_Accounting_table.loc [i, "Size"] #calculates NPV/sqft
-            if i == "MRU": #All MRU equivalent values for MRU is 0
+            if i == "Market Rate Housing": #All Market Rate Housing equivalent values for Market Rate Housing is 0
                 MRU_Add_Table.loc[i, "MRU Break Even"] = 0
                 MRU_Add_Table.loc[i, "Scaled for Size"] = 0
                 MRU_Add_Table.loc[i, "Extra MRU From Rankings"] = 0
             else: #for each row, fill out horizontally, left to right
-                MRU_Add_Table.loc[i, "MRU Break Even"] = (MRU_Add_Table.loc["MRU", "NPV/SqFt"] - MRU_Add_Table.loc[i, "NPV/SqFt"])/MRU_Add_Table.loc["MRU", "NPV/SqFt"] #this calculates MRUs to break even/sqft
-                MRU_Add_Table.loc[i, "Scaled for Size"] = MRU_Add_Table.loc[i, "MRU Break Even"]*Item_Accounting_table.loc[i, "Size"]/Item_Accounting_table.loc["MRU", "Size"]
+                MRU_Add_Table.loc[i, "MRU Break Even"] = (MRU_Add_Table.loc["Market Rate Housing", "NPV/SqFt"] - MRU_Add_Table.loc[i, "NPV/SqFt"])/MRU_Add_Table.loc["Market Rate Housing", "NPV/SqFt"] #this calculates Market Rate Housings to break even/sqft
+                MRU_Add_Table.loc[i, "Scaled for Size"] = MRU_Add_Table.loc[i, "MRU Break Even"]*Item_Accounting_table.loc[i, "Size"]/Item_Accounting_table.loc["Market Rate Housing", "Size"]
                 MRU_Add_Table.loc[i, "Extra MRU From Rankings"] = MRU_Add_Table.loc[i, "Scaled for Size"]*(rank_to_profit(Input_table.loc[i, "Units/Rank"]))
         else: #for off site locations, since we don't calculate per sqft, only absolute. Similarly, calculate left to right
             MRU_Add_Table.loc[i, "NPV/SqFt"] = 0
-            MRU_Add_Table.loc[i, "MRU Break Even"] = (nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, "MRU", "NOI"))-nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, i, "NOI")))/nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, "MRU", "NOI")) #here is the problem: since funds have an NOI of 0????
+            MRU_Add_Table.loc[i, "MRU Break Even"] = (nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, "Market Rate Housing", "NOI"))-nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, i, "NOI")))/nf.npv(Discount_rate, NOI_table_builder(Item_Accounting_table, "Market Rate Housing", "NOI")) #here is the problem: since funds have an NOI of 0????
             MRU_Add_Table.loc[i, "Scaled for Size"] = MRU_Add_Table.loc[i, "MRU Break Even"]
             MRU_Add_Table.loc[i, "Extra MRU From Rankings"] = MRU_Add_Table.loc[i, "Scaled for Size"]*(rank_to_profit(Input_table.loc[i, "Units/Rank"])) #this is the same as "Base Extra MRU Percent" in MSPF 4.2 "Natural Log Testing Stuff" sheet
 
@@ -195,22 +185,17 @@ def GPTOutputTable_Builder(Item_Accounting_table, MRU_Add_Table, min_units, max_
         log_arg = max(i, 1)
         MRUAdd = MRU_Add_Table.loc[item, "Extra MRU From Rankings"] * (1 + np.log(log_arg))
 
-        NOITable = NOI_table_builder(Item_Accounting_table, "MRU", "NOI") * MRUAdd + NOI_table_builder(Item_Accounting_table, item, "NOI") * i
+        NOITable = NOI_table_builder(Item_Accounting_table, "Market Rate Housing", "NOI") * MRUAdd + NOI_table_builder(Item_Accounting_table, item, "NOI") * i
 
         GPTOutputTable.at["IRR", i]   = nf.irr(NOITable)
         GPTOutputTable.at["NPV", i]   = nf.npv(Discount_rate, NOITable)
         GPTOutputTable.at["Costs", i] = (
-            (Item_Accounting_table.loc["MRU", "Construction_cost"] + Item_Accounting_table.loc["MRU", "Soft_Costs"]) * MRUAdd
+            (Item_Accounting_table.loc["Market Rate Housing", "Construction_cost"] + Item_Accounting_table.loc["Market Rate Housing", "Soft_Costs"]) * MRUAdd
             + (Item_Accounting_table.loc[item, "Construction_cost"] + Item_Accounting_table.loc[item, "Soft_Costs"]) * i
         )
 
     return GPTOutputTable
 
-
-#These four tables should be exported to Alan's ChatGPT API, along with a prompt of something along the following:
-#"You are a real estate developer in [city]. In addition to what you already have approved, you can add the following community amenities (affordable housing, grocery store, community center, or funding for an off-site plaza), with the quantities and resulting IRR, NPV, and initial costs in the charts below.
-#With this information, return a chart of how many of each amenity you would build. The first column should be labeled 'Affordable Housing', 'Grocery Store', 'Community Center', and 'Park/Plaza', and the second column should list how many of each amenity you decide to build.
-#Balance between using NPV and IRR as metrics, and lean towards building a mix of different items, if they have similar profitability.""
 
 def generate_gpt_tables(Item_Accounting_table, MRU_Add_Table): #Generated here as a dictionary for simplicity
     """Generates all GPT output tables with their specific configurations."""
@@ -219,7 +204,7 @@ def generate_gpt_tables(Item_Accounting_table, MRU_Add_Table): #Generated here a
         "Grocery Store": GPTOutputTable_Builder(Item_Accounting_table, MRU_Add_Table, 0, 6, 1, "Grocery Store"),
         "Community Center": GPTOutputTable_Builder(Item_Accounting_table, MRU_Add_Table, 0, 6, 1, "Community Center"),
         "Park/Plaza": GPTOutputTable_Builder(Item_Accounting_table, MRU_Add_Table, 0, 6, 1, "Park/Plaza"),
-        "Fund": GPTOutputTable_Builder(Item_Accounting_table, MRU_Add_Table, 0, 6, 1, "Fund")
+        "Fund": GPTOutputTable_Builder(Item_Accounting_table, MRU_Add_Table, 0, 21, 1, "Fund")
     }
 
 
@@ -251,8 +236,8 @@ def create_irr_chart(gpt_tables):
         alt.Chart(IRR_first6_long)
         .mark_line(point=True)
         .encode(
-            x=alt.X('Period:Q', title='Units Built'),         # if your columns are unit counts, use ':Q' and title='Units'
-            y=alt.Y('IRR:Q', title='IRR', axis=alt.Axis(format='%')),
+            x=alt.X('Period:Q', title='Quantity Built'),         # if your columns are unit counts, use ':Q' and title='Units'
+            y=alt.Y('IRR:Q', title='Internal Rate of Return', axis=alt.Axis(format='%')),
             color=alt.Color('Amenity:N', title='Amenity'),
             tooltip=['Amenity', 'Period', alt.Tooltip('IRR:Q', format='.2%')]
         )
@@ -290,7 +275,7 @@ def create_npv_chart(gpt_tables):
         alt.Chart(NPV_first6_long)
         .mark_line(point=True)
         .encode(
-            x=alt.X('Period:Q', title='Units Built'),
+            x=alt.X('Period:Q', title='Quantity Built'),
             y=alt.Y('NPV:Q', title='Net Present Value', axis=alt.Axis(format='$,.0f')),
             color=alt.Color('Amenity:N', title='Amenity'),
             tooltip=['Amenity', 'Period', alt.Tooltip('NPV:Q', format='$,.0f')]
@@ -312,9 +297,9 @@ def get_Final_Build_Table(Item_Accounting_table, Input_table, MRU_Add_Table):
         "Size": [0, 0, 0, 0, 0, 0]
     }, index=Input_table.index)
     for i in Final_Build_Table.index:
-        if i != "MRU" and Final_Build_Table.loc[i, "Number"] != 0:
-            Final_Build_Table.loc["MRU", "Number"] += MRU_Add_Table.loc[i, "Extra MRU From Rankings"] * (1 + np.log(Final_Build_Table.loc[i, "Number"]))
-    Final_Build_Table.loc["MRU", "Number"] = np.round(Final_Build_Table.loc["MRU", "Number"])
+        if i != "Market Rate Housing" and Final_Build_Table.loc[i, "Number"] != 0:
+            Final_Build_Table.loc["Market Rate Housing", "Number"] += MRU_Add_Table.loc[i, "Extra MRU From Rankings"] * (1 + np.log(Final_Build_Table.loc[i, "Number"]))
+    Final_Build_Table.loc["Market Rate Housing", "Number"] = np.round(Final_Build_Table.loc["Market Rate Housing", "Number"])
     for i in Final_Build_Table.index:
         Final_Build_Table.loc[i, "Size"] = Item_Accounting_table.loc[i, "Size"]*Final_Build_Table.loc[i, "Number"]
     return Final_Build_Table
@@ -349,9 +334,9 @@ def get_Master_Financial_Table(Item_Accounting_table, Final_Build_Table):
 
 def get_Final_Display(Item_Accounting_table, Final_Build_Table, Master_Financial_Table):
     """Creates and returns the Final Display Table with all calculations applied."""
-    Final_Display = pd.DataFrame(index = ["Stories", "MRU Stories", "NPV", "IRR", "Likelihood of Construction"], columns = ["Value"])
+    Final_Display = pd.DataFrame(index = ["Stories", "Market Rate Housing Stories", "NPV", "IRR", "Likelihood of Construction"], columns = ["Value"])
     Final_Display.loc["Stories"] = np.ceil(Final_Build_Table.loc[:, "Size"].sum()/Item_Accounting_table.loc["Land", "Size"])
-    Final_Display.loc["MRU Stories"] = (Final_Build_Table.loc["MRU", "Size"]/Item_Accounting_table.loc["Land", "Size"])
+    Final_Display.loc["Market Rate Housing Stories"] = (Final_Build_Table.loc["Market Rate Housing", "Size"]/Item_Accounting_table.loc["Land", "Size"])
     Final_Display.loc["NPV"] = nf.npv(Discount_rate, Master_Financial_Table.loc["Pre-Tax Cash Flow", :])
     Final_Display.loc["IRR"] = nf.irr(Master_Financial_Table.loc["Pre-Tax Cash Flow", :])
     Final_Display.loc["Likelihood of Construction"] = 1/(1+np.e**(-55*(Final_Display.loc["IRR", "Value"]-0.135)))
@@ -373,22 +358,30 @@ if 'game_results' not in st.session_state:
 
 def start_screen():
     """Display the game start screen."""
-    st.title("🏗️ Real Estate Development Game")
+    st.title("🏗️ Dynamic Zoning Simulation")
     st.markdown("### Welcome to the Dynamic Zoning Simulation!")
+    
+    # Get player name
+    player_name = st.text_input("Enter your name (optional):", value="")
+    
     st.markdown("""
     **Game Overview:**
-    - You'll play 5 rounds as a member of the community
-    - Each round, you'll set priorities for community benefits
-    - Your decisions will affect what gets built and the financial outcomes
+    - You'll play 5 rounds as a member of the community. Each round is a new project in your neighborhood.
+    - For each project, you'll set priorities for community benefits, deciding on a scale of 1 (low) to 10 (high) how much you prioritize each amenity.
+    - Your decisions will determine financial incentives for developers, affecting what gets built.
     - See what happens to the project over time!
     """)
     
     if st.button("🚀 Start Game", type="primary", use_container_width=True):
+        if player_name:
+            st.session_state.player_name = player_name
+        else:
+            st.session_state.player_name = "Player"
         st.session_state.game_state = 'input'
         st.rerun()
 
 def input_stage():
-    """Display the input stage for setting priorities."""
+    """Decide the Community Priorities for this Round."""
     st.title(f"Round {st.session_state.current_round} - Set Your Priorities")
     st.markdown("Set your priorities and see how they affect financial outcomes (1=low, 10=high).")
     st.markdown("100% = developer breaks even on building the (first) amenity, <100% = loss, >100% = profit. Subsidy decreases with each additional amenity built.")
@@ -399,7 +392,7 @@ def input_stage():
         
         # Aggregate built items from all previous rounds
         cumulative_built = {
-            'MRU': 0,
+            'Market Rate Housing': 0,
             'Affordable Housing': 0,
             'Grocery Store': 0,
             'Community Center': 0,
@@ -466,6 +459,21 @@ def input_stage():
     with st.expander("Item Accounting Details"):
         st.dataframe(Item_Accounting_table)
     
+    # ================================
+    # API Call Here
+    # ================================
+
+
+    #API should take in variable "gpt_tables" and the following prompt:
+    #"You are a real estate developer in San Francisco. Under a new zoning framework, you are permitted some market rate housing, but can increase the number of units by building community amenities (affordable housing, grocery store, community center, off-site plaza, or paying into a community fund).
+    #With this information, return a chart of how many of each amenity you would build/fund. The index should be labeled 'Affordable Housing', 'Grocery Store', 'Community Center', 'Park/Plaza', and 'Fund', and the second column should list how many of each amenity you decide to build/fund. 
+    #Balance between using NPV and IRR as profitabilitymetrics."
+
+
+    # ================================
+    # API Call Here
+    # ================================
+
     if st.button("📊 View Results", type="primary", use_container_width=True):
         # Generate final build results
         Final_Build_Table = get_Final_Build_Table(Item_Accounting_table, Input_table, MRU_Add_Table)
@@ -474,7 +482,7 @@ def input_stage():
         
         # Extract what was built in this round
         built_items = {
-            'MRU': int(Final_Build_Table.loc['MRU', 'Number']),
+            'Market Rate Housing': int(Final_Build_Table.loc['Market Rate Housing', 'Number']),
             'Affordable Housing': int(Final_Build_Table.loc['Affordable Housing', 'Number']),
             'Grocery Store': int(Final_Build_Table.loc['Grocery Store', 'Number']),
             'Community Center': int(Final_Build_Table.loc['Community Center', 'Number']),
@@ -518,18 +526,12 @@ def output_stage():
     st.subheader("🏢 Final Project Results")
     
     # Display key metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.metric("IRR", f"{float(Final_Display.loc['IRR', 'Value']):.1%}")
-    
-    with col2:
-        st.metric("NPV", f"${float(Final_Display.loc['NPV', 'Value']):,.0f}")
-    
-    with col3:
         st.metric("Stories", f"{float(Final_Display.loc['Stories', 'Value']):.1f}")
     
-    with col4:
+    with col2:
         likelihood = float(Final_Display.loc['Likelihood of Construction', 'Value'])
         st.metric("Construction Likelihood", f"{likelihood:.1%}")
     
@@ -736,7 +738,7 @@ def end_screen():
                 st.dataframe(result['final_display'])
     
     # Final message
-    st.success("🎊 Congratulations! You've completed all 5 rounds of the Real Estate Development Game!")
+    st.success("🎊 Congratulations! You've completed all 5 rounds of the Dynamic Zoning Simulation! Thanks for playing!")
     
     if st.button("🔄 Play Again", type="primary", use_container_width=True):
         st.session_state.game_state = 'start'
