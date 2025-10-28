@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    # container_name: zoning-backend  # (optional; you can remove to avoid name clashes)
+    ports:
+      - "50053:50053"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}  # <-- don't hardcode secrets in YAML
+      - OPENAI_MODEL=gpt-4o
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    # healthcheck:
+    #   test: ["CMD", "curl", "-fsS", "http://localhost:50053/openapi.json"]
+    #   interval: 5s
+    #   timeout: 3s
+    #   retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://proforma.media.mit.edu:50053/simulate   # <-- use the service name
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    # depends_on:
+    #   backend:
+    #     condition: service_healthy
+    restart: unless-stopped

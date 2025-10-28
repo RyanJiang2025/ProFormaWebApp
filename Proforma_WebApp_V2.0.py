@@ -8,9 +8,13 @@ import pandas as pd
 import numpy as np
 import numpy_financial as nf
 import altair as alt
-
+import requests
 st.set_page_config(layout="wide")
 
+import os
+
+API_URL = os.getenv("API_URL", "http://127.0.0.1:50053/simulate")
+# or your container/remote URL
 
 # =============================================================================
 # CALCULATION FUNCTIONS
@@ -475,43 +479,71 @@ def input_stage():
     # ================================
 
     if st.button("📊 View Results", type="primary", use_container_width=True):
-        # Generate final build results
-        Final_Build_Table = get_Final_Build_Table(Item_Accounting_table, Input_table, MRU_Add_Table)
-        Master_Financial_Table = get_Master_Financial_Table(Item_Accounting_table, Final_Build_Table)
-        Final_Display = get_Final_Display(Item_Accounting_table, Final_Build_Table, Master_Financial_Table)
-        
-        # Extract what was built in this round
+        payload = {
+            "rankings": {
+                "affordable_housing": ranking_Housing_Affordable,
+                "grocery_store": ranking_InBuilding_Grocery,
+                "community_center": ranking_InBuilding_CommunityCenter,
+                "park_plaza": ranking_OffSite_ParkPlaza,
+                "fund": ranking_Fund,
+            },
+            "gpt_decide": True,            # <— ask backend to have GPT decide
+            "city": "San Francisco"
+        }
+        resp = requests.post(API_URL, json=payload, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+
+        Item_Accounting_table = pd.DataFrame(**data["item_accounting_table"])
+        Input_table           = pd.DataFrame(**data["input_table"])
+        MRU_Add_Table         = pd.DataFrame(**data["mru_add_table"])
+
+        Final_Build_Table      = pd.DataFrame(**data["final_build_table"])
+        Master_Financial_Table = pd.DataFrame(**data["master_financial_table"])
+        Final_Display          = pd.DataFrame(**data["final_display"])
+
+        # Optional chart series:
+        irr_first6 = data["irr_series_first6"]
+        npv_first6 = data["npv_series_first6"]
+
+        # GPT outputs:
+        gpt_decision  = data.get("gpt_decision") or {}
+        gpt_rationale = data.get("gpt_rationale") or ""
+
+        # built_items now reflect GPT plan already applied server-side
         built_items = {
             'Market Rate Housing': int(Final_Build_Table.loc['Market Rate Housing', 'Number']),
-            'Affordable Housing': int(Final_Build_Table.loc['Affordable Housing', 'Number']),
-            'Grocery Store': int(Final_Build_Table.loc['Grocery Store', 'Number']),
-            'Community Center': int(Final_Build_Table.loc['Community Center', 'Number']),
-            'Park/Plaza': int(Final_Build_Table.loc['Park/Plaza', 'Number']),
-            'Fund': int(Final_Build_Table.loc['Fund', 'Number'])
+            'Affordable Housing':  int(Final_Build_Table.loc['Affordable Housing', 'Number']),
+            'Grocery Store':       int(Final_Build_Table.loc['Grocery Store', 'Number']),
+            'Community Center':    int(Final_Build_Table.loc['Community Center', 'Number']),
+            'Park/Plaza':          int(Final_Build_Table.loc['Park/Plaza', 'Number']),
+            'Fund':                int(Final_Build_Table.loc['Fund', 'Number'])
         }
-        
-        # Store the generated results for the current round
+
         round_result = {
             'round': st.session_state.current_round,
-            'rankings': round_rankings['rankings'],
+            'rankings': st.session_state.current_rankings['rankings'],
             'final_display': Final_Display,
             'final_build': Final_Build_Table,
-            'built_items': built_items
+            'built_items': built_items,
+            'gpt_decision': gpt_decision,
+            'gpt_rationale': gpt_rationale,
         }
         st.session_state.game_results.append(round_result)
-        
-        # Store the computed tables for display in output_stage
+
         st.session_state.current_output = {
             'Item_Accounting_table': Item_Accounting_table,
             'Input_table': Input_table,
             'MRU_Add_Table': MRU_Add_Table,
             'Final_Build_Table': Final_Build_Table,
             'Final_Display': Final_Display,
-            'gpt_tables': gpt_tables
+            'gpt_decision': gpt_decision,
+            'gpt_rationale': gpt_rationale,
         }
-        
+
         st.session_state.game_state = 'output'
         st.rerun()
+
 
 def output_stage():
     """Display the output stage showing results for the current round."""
@@ -576,6 +608,17 @@ def end_screen():
     
     # Calculate summary statistics
     total_rounds = len(st.session_state.game_results)
+    if total_rounds == 0:
+        st.warning("No completed rounds found. Please play at least one round before finishing.")
+        if st.button("🏠 Back to Start", use_container_width=True):
+            st.session_state.game_state = 'start'
+            st.session_state.current_round = 1
+            st.session_state.game_results = []
+            if 'current_output' in st.session_state:
+                del st.session_state.current_output
+            st.rerun()
+        return
+
     avg_irr = sum([float(result['final_display'].loc['IRR', 'Value']) for result in st.session_state.game_results]) / total_rounds
     avg_npv = sum([float(result['final_display'].loc['NPV', 'Value']) for result in st.session_state.game_results]) / total_rounds
     avg_stories = sum([float(result['final_display'].loc['Stories', 'Value']) for result in st.session_state.game_results]) / total_rounds

@@ -1,0 +1,23 @@
+# Backend: FastAPI
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps (optional, but often useful for numpy/pandas speed/stability)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency list first to leverage Docker layer caching
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy backend code
+# Ensure main.py (your FastAPI app) is in project root, or adjust path
+COPY main.py /app/main.py
+
+# Expose backend port
+EXPOSE 50053
+
+# Run FastAPI
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "50053"]
