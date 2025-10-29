@@ -3,3 +3,5 @@ venv
 
 .direnv
 flake.lock
+
+.env
