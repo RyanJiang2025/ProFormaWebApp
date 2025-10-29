@@ -669,22 +669,8 @@ def input_stage():
             progress_data.append({"Amenity": amenity, "Quantity": count})
         progress_df = pd.DataFrame(progress_data)
 
-        # Create a bar chart
-        progress_chart = (
-            alt.Chart(progress_df)
-            .mark_bar()
-            .encode(
-                x=alt.X(
-                    "Amenity:N", title="Amenity Type", axis=alt.Axis(labelAngle=-45)
-                ),
-                y=alt.Y("Quantity:Q", title="Cumulative Quantity Built"),
-                color=alt.Color("Amenity:N", title="Amenity"),
-                tooltip=["Amenity", "Quantity"],
-            )
-            .properties(height=200, width=600)
-        )
-
-        st.altair_chart(progress_chart, use_container_width=True)
+        # Display dataframe instead of chart
+        st.dataframe(progress_df)
 
     # Create two columns: left for sliders, right for charts
     col_sliders, col_charts = st.columns([1, 1])
@@ -1058,8 +1044,13 @@ def end_screen():
     with col2:
         if not built_df.empty:
             st.markdown("**Cumulative Items Built Over Time**")
-            chart_built = (
+            # Dual-axis chart: housing (MRU, Affordable) on right axis; others on left
+            housing_items = ["Market Rate Housing", "Affordable Housing"]
+            other_items = ["Grocery Store", "Community Center", "Park/Plaza", "Fund"]
+
+            left_layer = (
                 alt.Chart(built_df)
+                .transform_filter(alt.FieldOneOfPredicate(field="Amenity", oneOf=other_items))
                 .mark_line(point=True)
                 .encode(
                     x=alt.X("Round:O", title="Round", axis=alt.Axis(labelAngle=0)),
@@ -1067,9 +1058,31 @@ def end_screen():
                     color=alt.Color("Amenity:N", title="Amenity"),
                     tooltip=["Round", "Amenity", "Number Built"],
                 )
+            )
+
+            right_layer = (
+                alt.Chart(built_df)
+                .transform_filter(alt.FieldOneOfPredicate(field="Amenity", oneOf=housing_items))
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("Round:O", title="Round", axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y(
+                        "Number Built:Q",
+                        title="Cumulative Quantity (Housing)",
+                        axis=alt.Axis(orient="right"),
+                    ),
+                    color=alt.Color("Amenity:N", title="Amenity"),
+                    tooltip=["Round", "Amenity", "Number Built"],
+                )
+            )
+
+            chart_built_dual = (
+                alt.layer(left_layer, right_layer)
+                .resolve_scale(y="independent")
                 .properties(height=300)
             )
-            st.altair_chart(chart_built, use_container_width=True)
+
+            st.altair_chart(chart_built_dual, use_container_width=True)
 
     col1, col2 = st.columns(2)
 
