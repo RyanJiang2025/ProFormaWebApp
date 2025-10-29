@@ -26,7 +26,7 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - API_URL=http://proforma.media.mit.edu:50053/simulate   # <-- use the service name
+      - API_URL=http://computer.media.mit.edu:50053   # <-- use the service name
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
