@@ -6,6 +6,8 @@ import pandas as pd
 import numpy as np
 import numpy_financial as nf
 
+from proforma import generate_gpt_tables
+
 # ======================
 # CONSTANTS / PARAMETERS
 # ======================
@@ -25,7 +27,8 @@ Market_rent_sqft = 4
 Exit_value_multiple = 20
 
 
-import os, json
+import os
+import json
 from openai import OpenAI
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # choose / override via env
@@ -366,25 +369,6 @@ def GPTOutputTable_Builder(
             item_df.loc[item, "Construction_cost"] + item_df.loc[item, "Soft_Costs"]
         ) * i
     return out
-
-
-# TODO: Potential duplicate of ./Proforma_WebApp_V2.0.py:/def\ generate_gpt_tables
-def generate_gpt_tables(
-    item_df: pd.DataFrame, mr_add: pd.DataFrame
-) -> Dict[str, pd.DataFrame]:
-    return {
-        "Affordable Housing": GPTOutputTable_Builder(
-            item_df, mr_add, 0, 51, 5, "Affordable Housing"
-        ),
-        "Grocery Store": GPTOutputTable_Builder(
-            item_df, mr_add, 0, 6, 1, "Grocery Store"
-        ),
-        "Community Center": GPTOutputTable_Builder(
-            item_df, mr_add, 0, 6, 1, "Community Center"
-        ),
-        "Park/Plaza": GPTOutputTable_Builder(item_df, mr_add, 0, 6, 1, "Park/Plaza"),
-        "Fund": GPTOutputTable_Builder(item_df, mr_add, 0, 21, 1, "Fund"),
-    }
 
 
 def get_Final_Build_Table(

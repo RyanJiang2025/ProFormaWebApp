@@ -14,10 +14,11 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy backend code
 # Ensure main.py (your FastAPI app) is in project root, or adjust path
-COPY main.py /app/main.py
+COPY src/proforma.py /app/proforma.py
+COPY src/service.py /app/service.py
 
 # Expose backend port
 EXPOSE 50053
 
 # Run FastAPI
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "50053"]
+CMD ["uvicorn", "service:app", "--host", "0.0.0.0", "--port", "50053"]
