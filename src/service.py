@@ -5,28 +5,6 @@ from typing import Dict, Any
 import pandas as pd
 import numpy as np
 import numpy_financial as nf
-
-from proforma import generate_gpt_tables
-
-# ======================
-# CONSTANTS / PARAMETERS
-# ======================
-Scaling_Grocery_Rent = 0.1
-Scaling_ParkPlaza_MRUAdd = 2.15
-Scaling_AffordableHousing_MRUAdd = 0.75
-Scaling_CommunityCenter_MRUAdd = 0.75
-Scaling_Fund_MRUAdd = 1
-
-MRU_count_initial = 48
-soft_costs = 0.22
-Rent_increase = 0.10
-Upkeep_increase = 0.04
-Other_expenses = -500
-Discount_rate = 0.08
-Market_rent_sqft = 4
-Exit_value_multiple = 20
-
-
 import os
 import json
 from openai import OpenAI
@@ -34,6 +12,16 @@ from openai import OpenAI
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # choose / override via env
 client = OpenAI()
 
+from proforma import (
+    generate_gpt_tables,
+    get_item_accounting_table,
+    get_input_table,
+    get_MRU_Add_table,
+    get_Final_Build_Table,
+    get_Master_Financial_Table,
+    get_Final_Display,
+    MRU_count_initial,
+)
 
 def df_to_compact_csv(df: pd.DataFrame) -> str:
     cols = [str(c) for c in df.columns]
@@ -187,280 +175,6 @@ class DecideRequest(BaseModel):
     rankings: Rankings
     city: str = "San Francisco"
 
-
-# ======================
-# Calculation Functions
-# ======================
-def get_item_accounting_table() -> pd.DataFrame:
-    Item_Accounting_table = {
-        "Size": [9000, 750, 750, 7500, 20000, 0, 0],
-        "Rent_yearly": [0, 36000, 18000, 300000, 0, 0, 0],
-        "Construction_cost": [-900, -375000, -375000, -2750000, -10000000, -4500000, 0],
-        "Soft_Costs": [0, 0, 0, 0, 0, 0, 0],
-        "Upkeep_yearly": [0, -6000, -6000, -82500, -472000, -125000, -100000],
-        "MRU_add_per_unit": [0, 0, 0, 0, 0, 0, 0],
-    }
-    df = pd.DataFrame(Item_Accounting_table)
-    df.index = [
-        "Land",
-        "Market Rate Housing",
-        "Affordable Housing",
-        "Grocery Store",
-        "Community Center",
-        "Park/Plaza",
-        "Fund",
-    ]
-    for i in df.index:
-        df.loc[i, "Soft_Costs"] = df.loc[i, "Construction_cost"] * soft_costs
-    df.loc["Grocery Store", "Rent_yearly"] = (
-        df.loc["Grocery Store", "Rent_yearly"] * Scaling_Grocery_Rent
-    )
-    return df
-
-
-def get_input_table(item_df: pd.DataFrame, r: Rankings) -> pd.DataFrame:
-    Input_table = {
-        "Units/Rank": [
-            MRU_count_initial,
-            r.affordable_housing,
-            r.grocery_store,
-            r.community_center,
-            r.park_plaza,
-            r.fund,
-        ],
-        "Net Profit/Year/SqFt": [0, 0, 0, 0, 0, 0],
-    }
-    df = pd.DataFrame(
-        Input_table,
-        index=[
-            "Market Rate Housing",
-            "Affordable Housing",
-            "Grocery Store",
-            "Community Center",
-            "Park/Plaza",
-            "Fund",
-        ],
-    )
-    for i in item_df.index[1:]:
-        if item_df.loc[i, "Size"] != 0:
-            df.loc[i, "Net Profit/Year/SqFt"] = (
-                item_df.loc[i, "Rent_yearly"] + item_df.loc[i, "Upkeep_yearly"]
-            ) / item_df.loc[i, "Size"]
-        else:
-            df.loc[i, "Net Profit/Year/SqFt"] = 0
-    return df
-
-
-def NOI_table_builder(
-    item_df: pd.DataFrame, item_type: str, return_type: str
-) -> pd.Series | pd.DataFrame:
-    NoiTable = np.zeros((3, 11), dtype=float)
-    NoiTable[2, 0] = item_df.loc[item_type, "Construction_cost"] * (1 + soft_costs)
-    NoiTable[0, 1] = item_df.loc[item_type, "Rent_yearly"]
-    NoiTable[1, 1] = item_df.loc[item_type, "Upkeep_yearly"]
-    for i in range(2, 11):
-        NoiTable[0, i] = NoiTable[0, i - 1] * (1 + Rent_increase)
-        NoiTable[1, i] = NoiTable[1, i - 1] * (1 + Upkeep_increase)
-    NoiTable[0, 10] = NoiTable[0, 10] * (Exit_value_multiple + 1)  # exit
-    for i in range(1, 11):
-        NoiTable[2, i] = NoiTable[0, i] + NoiTable[1, i]
-    df = pd.DataFrame(NoiTable, index=["Rent", "Upkeep", "NOI"])
-    if return_type in ["Rent", "Upkeep", "NOI"]:
-        return df.loc[return_type]
-    return df
-
-
-def get_MRU_Add_table(item_df: pd.DataFrame, input_df: pd.DataFrame) -> pd.DataFrame:
-    mr = pd.DataFrame(
-        0.0,
-        index=input_df.index,
-        columns=[
-            "NPV/SqFt",
-            "MRU Break Even",
-            "Scaled for Size",
-            "Extra MRU From Rankings",
-        ],
-    )
-    for i in mr.index:
-        if item_df.loc[i, "Size"] != 0:
-            mr.loc[i, "NPV/SqFt"] = (
-                nf.npv(Discount_rate, NOI_table_builder(item_df, i, "NOI"))
-                / item_df.loc[i, "Size"]
-            )
-            if i == "Market Rate Housing":
-                mr.loc[
-                    i, ["MRU Break Even", "Scaled for Size", "Extra MRU From Rankings"]
-                ] = 0
-            else:
-                mr.loc[i, "MRU Break Even"] = (
-                    mr.loc["Market Rate Housing", "NPV/SqFt"] - mr.loc[i, "NPV/SqFt"]
-                ) / mr.loc["Market Rate Housing", "NPV/SqFt"]
-                mr.loc[i, "Scaled for Size"] = (
-                    mr.loc[i, "MRU Break Even"]
-                    * item_df.loc[i, "Size"]
-                    / item_df.loc["Market Rate Housing", "Size"]
-                )
-                mr.loc[i, "Extra MRU From Rankings"] = mr.loc[
-                    i, "Scaled for Size"
-                ] * rank_to_profit(int(input_df.loc[i, "Units/Rank"]))
-        else:
-            mr.loc[i, "NPV/SqFt"] = 0
-            mr.loc[i, "MRU Break Even"] = (
-                nf.npv(
-                    Discount_rate,
-                    NOI_table_builder(item_df, "Market Rate Housing", "NOI"),
-                )
-                - nf.npv(Discount_rate, NOI_table_builder(item_df, i, "NOI"))
-            ) / nf.npv(
-                Discount_rate, NOI_table_builder(item_df, "Market Rate Housing", "NOI")
-            )
-            mr.loc[i, "Scaled for Size"] = mr.loc[i, "MRU Break Even"]
-            mr.loc[i, "Extra MRU From Rankings"] = mr.loc[
-                i, "Scaled for Size"
-            ] * rank_to_profit(int(input_df.loc[i, "Units/Rank"]))
-
-    # Scaling
-    mr.loc["Park/Plaza", "Extra MRU From Rankings"] *= Scaling_ParkPlaza_MRUAdd
-    mr.loc["Affordable Housing", "Extra MRU From Rankings"] *= (
-        Scaling_AffordableHousing_MRUAdd
-    )
-    mr.loc["Community Center", "Extra MRU From Rankings"] *= (
-        Scaling_CommunityCenter_MRUAdd
-    )
-    mr.loc["Fund", "Extra MRU From Rankings"] *= Scaling_Fund_MRUAdd
-
-    # mirror back to item_df (not required for API, but kept for parity)
-    for i in mr.index:
-        item_df.loc[i, "MRU_add_per_unit"] = mr.loc[i, "Extra MRU From Rankings"]
-
-    return mr
-
-
-def GPTOutputTable_Builder(
-    item_df: pd.DataFrame,
-    mr_add: pd.DataFrame,
-    min_units: int,
-    max_units: int,
-    step: int,
-    item: str,
-) -> pd.DataFrame:
-    cols = list(range(min_units, max_units, step))
-    if 0 not in cols:
-        cols = [0] + cols
-    cols = sorted(cols)
-    out = pd.DataFrame(
-        0.0, index=["IRR", "NPV", "Costs"], columns=pd.Index(cols, dtype=int)
-    )
-    for i in cols:
-        if i == 0:
-            continue
-        log_arg = max(i, 1)
-        MRUAdd = mr_add.loc[item, "Extra MRU From Rankings"] * (1 + np.log(log_arg))
-        NOITable = (
-            NOI_table_builder(item_df, "Market Rate Housing", "NOI") * MRUAdd
-            + NOI_table_builder(item_df, item, "NOI") * i
-        )
-        out.at["IRR", i] = nf.irr(NOITable)
-        out.at["NPV", i] = nf.npv(Discount_rate, NOITable)
-        out.at["Costs", i] = (
-            item_df.loc["Market Rate Housing", "Construction_cost"]
-            + item_df.loc["Market Rate Housing", "Soft_Costs"]
-        ) * MRUAdd + (
-            item_df.loc[item, "Construction_cost"] + item_df.loc[item, "Soft_Costs"]
-        ) * i
-    return out
-
-
-def get_Final_Build_Table(
-    item_df: pd.DataFrame, input_df: pd.DataFrame, mr_add: pd.DataFrame
-) -> pd.DataFrame:
-    fb = pd.DataFrame(
-        {"Number": [MRU_count_initial, 0, 0, 0, 0, 0], "Size": [0, 0, 0, 0, 0, 0]},
-        index=input_df.index,
-    )
-    for i in fb.index:
-        if i != "Market Rate Housing" and fb.loc[i, "Number"] != 0:
-            fb.loc["Market Rate Housing", "Number"] += mr_add.loc[
-                i, "Extra MRU From Rankings"
-            ] * (1 + np.log(fb.loc[i, "Number"]))
-    fb.loc["Market Rate Housing", "Number"] = np.round(
-        fb.loc["Market Rate Housing", "Number"]
-    )
-    for i in fb.index:
-        fb.loc[i, "Size"] = item_df.loc[i, "Size"] * fb.loc[i, "Number"]
-    return fb
-
-
-def get_Master_Financial_Table(item_df: pd.DataFrame, fb: pd.DataFrame) -> pd.DataFrame:
-    m = pd.DataFrame(
-        0.0,
-        index=[
-            "Revenue",
-            "Upkeep",
-            "Hard Costs",
-            "Soft Costs",
-            "Land Costs",
-            "NOI",
-            "Other Expenses",
-            "Pre-Tax Cash Flow",
-        ],
-        columns=range(11),
-    )
-    for item in fb.index:
-        m.loc["Revenue"] += (
-            NOI_table_builder(item_df, item, "Rent") * fb.loc[item, "Number"]
-        )
-        m.loc["Upkeep"] += (
-            NOI_table_builder(item_df, item, "Upkeep") * fb.loc[item, "Number"]
-        )
-        m.loc["Hard Costs", 0] += (
-            fb.loc[item, "Number"] * item_df.loc[item, "Construction_cost"]
-        )
-    m.loc["Soft Costs", 0] = m.loc["Hard Costs", 0] * soft_costs
-    m.loc["Land Costs", 0] = (
-        item_df.loc["Land", "Size"] * item_df.loc["Land", "Construction_cost"]
-    )
-    for period in m.columns:
-        m.loc["NOI", period] = m.loc[
-            ["Revenue", "Hard Costs", "Soft Costs", "Land Costs", "Upkeep"], period
-        ].sum()
-        m.loc["Other Expenses", period] = Other_expenses
-        m.loc["Pre-Tax Cash Flow", period] = (
-            m.loc["NOI", period] + m.loc["Other Expenses", period]
-        )
-    return m
-
-
-def get_Final_Display(
-    item_df: pd.DataFrame, fb: pd.DataFrame, m: pd.DataFrame
-) -> pd.DataFrame:
-    fd = pd.DataFrame(
-        index=[
-            "Stories",
-            "Market Rate Housing Stories",
-            "NPV",
-            "IRR",
-            "Likelihood of Construction",
-        ],
-        columns=["Value"],
-    )
-    fd.loc["Stories"] = np.ceil(fb.loc[:, "Size"].sum() / item_df.loc["Land", "Size"])
-    fd.loc["Market Rate Housing Stories"] = (
-        fb.loc["Market Rate Housing", "Size"] / item_df.loc["Land", "Size"]
-    )
-    fd.loc["NPV"] = nf.npv(Discount_rate, m.loc["Pre-Tax Cash Flow", :])
-    fd.loc["IRR"] = nf.irr(m.loc["Pre-Tax Cash Flow", :])
-    fd.loc["Likelihood of Construction"] = 1 / (
-        1 + np.e ** (-55 * (float(fd.loc["IRR", "Value"]) - 0.135))
-    )
-    return fd
-
-
-def first6(series_df: pd.DataFrame, row: str) -> list[float]:
-    cols = sorted([c for c in series_df.columns if isinstance(c, (int, float))])[:6]
-    return series_df.loc[row, cols].tolist()
-
-
 # ======================
 # FastAPI App
 # ======================
@@ -475,11 +189,22 @@ app.add_middleware(
 )
 
 
+def first6(df: pd.DataFrame, metric: str) -> list[float]:
+    cols = sorted(df.columns)[:6]
+    return [float(df.loc[metric, c]) for c in cols]
+
 @app.post("/simulate")
 def simulate(payload: SimulationRequest):
     # 1) Build core tables
     item = get_item_accounting_table()
-    inp = get_input_table(item, payload.rankings)
+    rankings_map = {
+        "Affordable Housing": int(payload.rankings.affordable_housing),
+        "Grocery Store": int(payload.rankings.grocery_store),
+        "Community Center": int(payload.rankings.community_center),
+        "Park/Plaza": int(payload.rankings.park_plaza),
+        "Fund": int(payload.rankings.fund),
+    }
+    inp = get_input_table(item, rankings_map)
     mr = get_MRU_Add_table(item, inp)
 
     # 2) Precompute GPT charts (always useful for frontend plots)
