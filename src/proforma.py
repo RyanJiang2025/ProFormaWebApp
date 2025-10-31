@@ -1,27 +1,29 @@
+# Hello MAS 552 students! Here are the following instructions for changing the code to implement your own amenities for your neighborhood.
+# Step 1: change the item name and descriptions to reflect your own amenities (lines 7-13).
+# Step 2: change scaling to keep IRR values roughly grouped together (lines 14-23).
+# Step 3: change the unit config to limit the number of units that can be built in each round (lines 25-34).
+# Step 4: change item accounting table to reflect your own amenities (lines 50-92).
+
 import pandas as pd
 import numpy as np
 import numpy_financial as nf
 import streamlit as st
 
-# =============================================================================
-# CALCULATION FUNCTIONS
-# =============================================================================
-
 # Note for future reference: MRU stands for Market Rate Unit. Later versions changed the public-facing dataframes from "MRU" to "Market Rate Housing", however the coding still largely uses "MRU".
 
-# Scaling Values
+# TODO: These scale the IRR values for each amenity. You can change these to your own values. The main reason they are changed is to get the IRR values to roughly group together.
+# You can do this in two ways: by scaling the Market Rate Unit add for each amenity, or to scale the rent itself. The rent scaling is more drastic, and so is only used here for the grocery store (where changing MRU add did little).
+# Test the grouping of IRRs by looking at the IRR values on the slider scale of the web app. If one amenity is highly profitable compared to the others (given equal ratings), then you will see the IRR line jump up much higher.
+# The reason we discuss grouping IRR is that NPV is much more diverse in the exact arc it takes.
+# Scaling dictionary keyed by amenity names
 Scaling_Grocery_Rent = 0.1
 Scaling_ParkPlaza_MRUAdd = 2.15
 Scaling_AffordableHousing_MRUAdd = 0.75
 Scaling_CommunityCenter_MRUAdd = 0.75
-Scaling_Fund_MRUAdd = 1  # needs to be fixed later on, formerly at 0.75
+Scaling_Fund_MRUAdd = 1  
 
-# =====================
-# GPT TABLE UNIT CONFIG
-# =====================
-# Configure, per amenity, how many points to generate and at what step.
-# Example: count=10, step=5  => 5,10,15,...,50 (starting at 5)
-# Set INCLUDE_ZERO_BASELINE to True to always include a 0 column.
+# TODO: This configures how many units of each amenity to generate, and in what increments. For example, right now at default, the AI developer can build up to 5*10 affordable housing units in each round, while they can only build up to 1*3 grocery stores.
+# As the AI developer chooses the build based on the tables that are generated using these numbers, the "count" and "step" variables limit developer options within a round.
 INCLUDE_ZERO_BASELINE = True
 AMENITY_UNIT_CONFIG = {
     "Affordable Housing": {"start": 0, "count": 11, "step": 5},
@@ -45,7 +47,9 @@ Exit_value_multiple = 20
 def rank_to_profit(rank):
     return rank * 0.2
 
-
+#TODO: This is the item accounting table. It is a table that contains the size, rent, construction cost, upkeep cost, and MRU add per unit for each amenity, plus land.
+# Change this as you desire. The first item in each list is the land (size, no rent generated, cost/sqft, no upkeep). 
+# For the other items, it lists the sqft size (0 for off-site amenities like a park or non-physical items like funds), the yearly rental income, the initial construction cost, soft costs (which should be left as 0, they are added later), and the yearly upkeep. MRU add per unit should also be left blank, as those are endogenous to the model.
 def get_item_accounting_table():
     """Creates and returns the Item Accounting Table with all calculations and scaling applied."""
     # Item Accounting Table of Excel Sheet
