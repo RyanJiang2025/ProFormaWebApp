@@ -1,16 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, conint
+from pydantic import BaseModel, conint, create_model
 from typing import Dict, Any
 import pandas as pd
 import numpy as np
-import numpy_financial as nf
 import os
 import json
 from openai import OpenAI
-
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # choose / override via env
-client = OpenAI()
 
 from proforma import (
     generate_gpt_tables,
@@ -21,7 +17,13 @@ from proforma import (
     get_Master_Financial_Table,
     get_Final_Display,
     MRU_count_initial,
+    get_amenity_name,
+    AMENITY_NAME_LIST,
+    to_snake_case,
 )
+
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # choose / override via env
+client = OpenAI()
 
 
 def df_to_compact_csv(df: pd.DataFrame) -> str:
@@ -34,15 +36,19 @@ def df_to_compact_csv(df: pd.DataFrame) -> str:
 
 
 def call_gpt_decider(city: str, eagerness: float, gpt_tables: dict) -> dict:
-    t_aff = df_to_compact_csv(gpt_tables["Affordable Housing"])
-    t_gro = df_to_compact_csv(gpt_tables["Grocery Store"])
-    t_cc = df_to_compact_csv(gpt_tables["Community Center"])
-    t_park = df_to_compact_csv(gpt_tables["Park/Plaza"])
-    t_fund = df_to_compact_csv(gpt_tables["Fund"])
+    # Get amenity names dynamically
+    amenity_names = [get_amenity_name(i) for i in range(1, 6)]
+    tables_csv = [df_to_compact_csv(gpt_tables[name]) for name in amenity_names]
+
+    # Build decision JSON structure dynamically
+    decision_keys = ", ".join([f'"{name}": <int>' for name in amenity_names])
+    
+    # Build table sections
+    table_sections = "\n\n".join([f"[{name}]\n{tbl}" for name, tbl in zip(amenity_names, tables_csv)])
 
     system_msg = (
         f"You are a real estate developer working in San Francisco. "
-        f"Below are financial tables for affordable housing, grocery stores, community centers, park/plazas, and neighborhood funds, showing IRR, NPV, and investment cost. "
+        f"Below are financial tables for five different amenities ({', '.join(amenity_names)}), showing IRR, NPV, and investment cost. "
         f"You are provided with a community eagerness score of {eagerness} (1 is low, 10 is high). "
         f"If the score is 1, do not build any amenities. If the score is 10, focus purely on financial profit. "
         f"For intermediate values, balance profit with community sentiment. "
@@ -56,31 +62,14 @@ Return STRICT JSON only:
 
 {{
   "decision": {{
-    "Affordable Housing": <int>,
-    "Grocery Store": <int>,
-    "Community Center": <int>,
-    "Park/Plaza": <int>,
-    "Fund": <int>
+    {decision_keys}
   }},
   "rationale": "<short explanation>"
 }}
 
 Tables (CSV):
 
-[Affordable Housing]
-{t_aff}
-
-[Grocery Store]
-{t_gro}
-
-[Community Center]
-{t_cc}
-
-[Park/Plaza]
-{t_park}
-
-[Fund]
-{t_fund}
+{table_sections}
 """
 
     resp = client.chat.completions.create(
@@ -99,26 +88,17 @@ def apply_plan(
     item_df: pd.DataFrame, mr_add: pd.DataFrame, plan: dict
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    plan keys: 'Affordable Housing', 'Grocery Store', 'Community Center', 'Park/Plaza', 'Fund'
+    plan keys: uses amenity names from proforma.AMENITY_NAMES
     Apply quantities, adjust Market Rate Housing via MRU-add, compute financials.
     """
+    amenity_names = [get_amenity_name(i) for i in range(1, 6)]
     fb = pd.DataFrame(
         {"Number": [MRU_count_initial, 0, 0, 0, 0, 0], "Size": 0.0},
-        index=[
-            "Market Rate Housing",
-            "Affordable Housing",
-            "Grocery Store",
-            "Community Center",
-            "Park/Plaza",
-            "Fund",
-        ],
+        index=["Market Rate Housing"] + amenity_names,
     )
     # Set GPT quantities (default to 0 if missing)
-    fb.loc["Affordable Housing", "Number"] = int(plan.get("Affordable Housing", 0))
-    fb.loc["Grocery Store", "Number"] = int(plan.get("Grocery Store", 0))
-    fb.loc["Community Center", "Number"] = int(plan.get("Community Center", 0))
-    fb.loc["Park/Plaza", "Number"] = int(plan.get("Park/Plaza", 0))
-    fb.loc["Fund", "Number"] = int(plan.get("Fund", 0))
+    for name in amenity_names:
+        fb.loc[name, "Number"] = int(plan.get(name, 0))
 
     # MRU-add → adjust MRH
     for idx in fb.index:
@@ -145,12 +125,16 @@ def apply_plan(
 # ======================
 
 
-class Rankings(BaseModel):
-    affordable_housing: conint(ge=1, le=10)
-    grocery_store: conint(ge=1, le=10)
-    community_center: conint(ge=1, le=10)
-    park_plaza: conint(ge=1, le=10)
-    fund: conint(ge=1, le=10)
+# Dynamically create Rankings model based on AMENITY_NAMES
+# This allows the model to use whatever amenity names are defined in proforma
+_rankings_fields = {}
+for i in range(1, 6):
+    name = get_amenity_name(i)
+    snake_name = to_snake_case(name)
+    _rankings_fields[snake_name] = conint(ge=1, le=10)
+
+# Use create_model for proper Pydantic model creation
+Rankings = create_model('Rankings', **_rankings_fields)
 
 
 class SimulationRequest(BaseModel):
@@ -200,32 +184,21 @@ def first6(df: pd.DataFrame, metric: str) -> list[float]:
 def simulate(payload: SimulationRequest):
     # 1) Build core tables
     item = get_item_accounting_table()
-    rankings_map = {
-        "Affordable Housing": int(payload.rankings.affordable_housing),
-        "Grocery Store": int(payload.rankings.grocery_store),
-        "Community Center": int(payload.rankings.community_center),
-        "Park/Plaza": int(payload.rankings.park_plaza),
-        "Fund": int(payload.rankings.fund),
-    }
+    
+    # Build rankings_map dynamically using amenity names
+    rankings_map = {}
+    for i in range(1, 6):
+        display_name = get_amenity_name(i)
+        snake_name = to_snake_case(display_name)
+        rankings_map[display_name] = int(getattr(payload.rankings, snake_name))
+    
     inp = get_input_table(item, rankings_map)
     mr = get_MRU_Add_table(item, inp)
 
     # 2) Precompute GPT charts (always useful for frontend plots)
     gpt = generate_gpt_tables(item, mr)
-    irr_series = {
-        "Affordable Housing": first6(gpt["Affordable Housing"], "IRR"),
-        "Grocery Store": first6(gpt["Grocery Store"], "IRR"),
-        "Community Center": first6(gpt["Community Center"], "IRR"),
-        "Park/Plaza": first6(gpt["Park/Plaza"], "IRR"),
-        "Fund": first6(gpt["Fund"], "IRR"),
-    }
-    npv_series = {
-        "Affordable Housing": first6(gpt["Affordable Housing"], "NPV"),
-        "Grocery Store": first6(gpt["Grocery Store"], "NPV"),
-        "Community Center": first6(gpt["Community Center"], "NPV"),
-        "Park/Plaza": first6(gpt["Park/Plaza"], "NPV"),
-        "Fund": first6(gpt["Fund"], "NPV"),
-    }
+    irr_series = {name: first6(gpt[name], "IRR") for name in AMENITY_NAME_LIST}
+    npv_series = {name: first6(gpt[name], "NPV") for name in AMENITY_NAME_LIST}
 
     gpt_decision = None
     gpt_rationale = None

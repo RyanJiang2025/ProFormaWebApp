@@ -1,8 +1,11 @@
 # Hello MAS 552 students! Here are the following instructions for changing the code to implement your own amenities for your neighborhood.
-# Step 1: change the item name and descriptions to reflect your own amenities (lines 7-13).
-# Step 2: change scaling to keep IRR values roughly grouped together (lines 14-23).
-# Step 3: change the unit config to limit the number of units that can be built in each round (lines 25-34).
-# Step 4: change item accounting table to reflect your own amenities (lines 50-92).
+# Step 1: change the item name and descriptions to reflect your own amenities.
+# Step 2: change scaling to keep IRR values roughly grouped together.
+# Step 3: change the unit config to limit the number of units that can be built in each round.
+# Step 4: change item accounting table to reflect your own amenities.
+# All of these steps can be found by searching for the string "TODO" in the code.
+
+# After these changes are done, in your terminal, use the command "streamlit run webapp.py" to run the code. It should open up a tab on your web browser.
 
 import pandas as pd
 import numpy as np
@@ -11,26 +14,62 @@ import streamlit as st
 
 # Note for future reference: MRU stands for Market Rate Unit. Later versions changed the public-facing dataframes from "MRU" to "Market Rate Housing", however the coding still largely uses "MRU".
 
+# TODO: Change the amenity names to reflect your own amenities.
+AMENITY_NAMES = {
+    1: "Affordable Housing",  #Please note that in webapp.py, on the end screen, amenity 1 is hard coded as being "housing". This doesn't matter for the calculations, but since housing tends to increase faster than other amenities, we separated it onto its own graph (with MRU) on the end screen.
+    2: "Grocery Store",  
+    3: "Community Center",  
+    4: "Park/Plaza",  
+    5: "Fund",  
+}
+
+# Helper: Get amenity name by number
+def get_amenity_name(num: int) -> str:
+    """Get the display name for amenity number (1-5)."""
+    return AMENITY_NAMES.get(num, f"amenity_{num}")
+
+# Helper: Convert display name to snake_case for API (e.g., "Dog Park" -> "dog_park")
+def to_snake_case(name: str) -> str:
+    """Convert display name to snake_case for API fields."""
+    return name.lower().replace(" ", "_").replace("/", "_").replace("-", "_")
+
+# Create a list of all amenity names for easy iteration
+AMENITY_NAME_LIST = [get_amenity_name(i) for i in range(1, 6)]
+
+# ============================================================================
+
 # TODO: These scale the IRR values for each amenity. You can change these to your own values. The main reason they are changed is to get the IRR values to roughly group together.
 # You can do this in two ways: by scaling the Market Rate Unit add for each amenity, or to scale the rent itself. The rent scaling is more drastic, and so is only used here for the grocery store (where changing MRU add did little).
 # Test the grouping of IRRs by looking at the IRR values on the slider scale of the web app. If one amenity is highly profitable compared to the others (given equal ratings), then you will see the IRR line jump up much higher.
 # The reason we discuss grouping IRR is that NPV is much more diverse in the exact arc it takes.
 # Scaling dictionary keyed by amenity names
-Scaling_Grocery_Rent = 0.1
-Scaling_ParkPlaza_MRUAdd = 2.15
-Scaling_AffordableHousing_MRUAdd = 0.75
-Scaling_CommunityCenter_MRUAdd = 0.75
-Scaling_Fund_MRUAdd = 1  
+# Note: If you change amenity names, update these variable names accordingly
+# Example: If amenity_2 becomes "Library", change to Scaling_Library_Rent
+Scaling_amenity_2_Rent = 0.1
+Scaling_amenity_4_MRUAdd = 2.15
+Scaling_amenity_1_MRUAdd = 0.75
+Scaling_amenity_3_MRUAdd = 0.75
+Scaling_amenity_5_MRUAdd = 1
+
+# Dynamic scaling dictionary (alternative approach - uses AMENITY_NAMES)
+# Access like: SCALING_CONFIG[get_amenity_name(2)]["rent"] = 0.1
+SCALING_CONFIG = {
+    get_amenity_name(1): {"mru_add": 0.75},
+    get_amenity_name(2): {"rent": 0.1, "mru_add": 1.0},
+    get_amenity_name(3): {"mru_add": 0.75},
+    get_amenity_name(4): {"mru_add": 2.15},
+    get_amenity_name(5): {"mru_add": 1.0},
+}  
 
 # TODO: This configures how many units of each amenity to generate, and in what increments. For example, right now at default, the AI developer can build up to 5*10 affordable housing units in each round, while they can only build up to 1*3 grocery stores.
 # As the AI developer chooses the build based on the tables that are generated using these numbers, the "count" and "step" variables limit developer options within a round.
 INCLUDE_ZERO_BASELINE = True
 AMENITY_UNIT_CONFIG = {
-    "Affordable Housing": {"start": 0, "count": 11, "step": 5},
-    "Grocery Store": {"start": 0, "count": 4, "step": 1},
-    "Community Center": {"start": 0, "count": 4, "step": 1},
-    "Park/Plaza": {"start": 0, "count": 4, "step": 1},
-    "Fund": {"start": 0, "count": 11, "step": 1},
+    get_amenity_name(1): {"start": 0, "count": 11, "step": 5},
+    get_amenity_name(2): {"start": 0, "count": 4, "step": 1},
+    get_amenity_name(3): {"start": 0, "count": 4, "step": 1},
+    get_amenity_name(4): {"start": 0, "count": 4, "step": 1},
+    get_amenity_name(5): {"start": 0, "count": 11, "step": 1},
 }
 
 # Assorted Items
@@ -73,11 +112,11 @@ def get_item_accounting_table():
     Item_Accounting_table.index = [
         "Land",
         "Market Rate Housing",
-        "Affordable Housing",
-        "Grocery Store",
-        "Community Center",
-        "Park/Plaza",
-        "Fund",
+        get_amenity_name(1),
+        get_amenity_name(2),
+        get_amenity_name(3),
+        get_amenity_name(4),
+        get_amenity_name(5),
     ]
     for i in Item_Accounting_table.index:
         Item_Accounting_table.loc[i, "Soft_Costs"] = (
@@ -85,8 +124,9 @@ def get_item_accounting_table():
         )
 
     # Scaling
-    Item_Accounting_table.loc["Grocery Store", "Rent_yearly"] = (
-        Item_Accounting_table.loc["Grocery Store", "Rent_yearly"] * Scaling_Grocery_Rent
+    amenity_2_name = get_amenity_name(2)
+    Item_Accounting_table.loc[amenity_2_name, "Rent_yearly"] = (
+        Item_Accounting_table.loc[amenity_2_name, "Rent_yearly"] * Scaling_amenity_2_Rent
     )
 
     return Item_Accounting_table
@@ -104,22 +144,22 @@ def get_input_table(Item_Accounting_table, rankings=None):
     Input_table = {
         "Units/Rank": [
             MRU_count_initial,
-            rankings["Affordable Housing"],
-            rankings["Grocery Store"],
-            rankings["Community Center"],
-            rankings["Park/Plaza"],
-            rankings["Fund"],
+            rankings[get_amenity_name(1)],
+            rankings[get_amenity_name(2)],
+            rankings[get_amenity_name(3)],
+            rankings[get_amenity_name(4)],
+            rankings[get_amenity_name(5)],
         ],
         "Net Profit/Year/SqFt": [0, 0, 0, 0, 0, 0],
     }
     Input_table = pd.DataFrame(Input_table)
     Input_table.index = [
         "Market Rate Housing",
-        "Affordable Housing",
-        "Grocery Store",
-        "Community Center",
-        "Park/Plaza",
-        "Fund",
+        get_amenity_name(1),
+        get_amenity_name(2),
+        get_amenity_name(3),
+        get_amenity_name(4),
+        get_amenity_name(5),
     ]
     for i in Item_Accounting_table.index[1:]:
         if Item_Accounting_table.loc[i, "Size"] != 0:
@@ -225,20 +265,27 @@ def get_MRU_Add_table(Item_Accounting_table, Input_table):
                 * (rank_to_profit(Input_table.loc[i, "Units/Rank"]))
             )  # this is the same as "Base Extra MRU Percent" in MSPF 4.2 "Natural Log Testing Stuff" sheet
 
-    MRU_Add_Table.loc["Park/Plaza", "Extra MRU From Rankings"] = (
-        MRU_Add_Table.loc["Park/Plaza", "Extra MRU From Rankings"]
-        * Scaling_ParkPlaza_MRUAdd
+    # Apply scaling using dynamic names
+    amenity_names = {
+        1: get_amenity_name(1),
+        3: get_amenity_name(3),
+        4: get_amenity_name(4),
+        5: get_amenity_name(5),
+    }
+    MRU_Add_Table.loc[amenity_names[4], "Extra MRU From Rankings"] = (
+        MRU_Add_Table.loc[amenity_names[4], "Extra MRU From Rankings"]
+        * Scaling_amenity_4_MRUAdd
     )
-    MRU_Add_Table.loc["Affordable Housing", "Extra MRU From Rankings"] = (
-        MRU_Add_Table.loc["Affordable Housing", "Extra MRU From Rankings"]
-        * Scaling_AffordableHousing_MRUAdd
+    MRU_Add_Table.loc[amenity_names[1], "Extra MRU From Rankings"] = (
+        MRU_Add_Table.loc[amenity_names[1], "Extra MRU From Rankings"]
+        * Scaling_amenity_1_MRUAdd
     )
-    MRU_Add_Table.loc["Community Center", "Extra MRU From Rankings"] = (
-        MRU_Add_Table.loc["Community Center", "Extra MRU From Rankings"]
-        * Scaling_CommunityCenter_MRUAdd
+    MRU_Add_Table.loc[amenity_names[3], "Extra MRU From Rankings"] = (
+        MRU_Add_Table.loc[amenity_names[3], "Extra MRU From Rankings"]
+        * Scaling_amenity_3_MRUAdd
     )
-    MRU_Add_Table.loc["Fund", "Extra MRU From Rankings"] = (
-        MRU_Add_Table.loc["Fund", "Extra MRU From Rankings"] * Scaling_Fund_MRUAdd
+    MRU_Add_Table.loc[amenity_names[5], "Extra MRU From Rankings"] = (
+        MRU_Add_Table.loc[amenity_names[5], "Extra MRU From Rankings"] * Scaling_amenity_5_MRUAdd
     )
     # Update older tables with MRU add numbers
     for i in MRU_Add_Table.index:
@@ -305,13 +352,7 @@ def generate_gpt_tables(Item_Accounting_table, MRU_Add_Table):
     and integer columns representing unit counts (0..10).
     """
     tables = {}
-    for amenity in [
-        "Affordable Housing",
-        "Grocery Store",
-        "Community Center",
-        "Park/Plaza",
-        "Fund",
-    ]:
+    for amenity in AMENITY_NAME_LIST:
         cfg = AMENITY_UNIT_CONFIG.get(amenity, {"start": 0, "count": 11, "step": 1})
         # Build columns per amenity
         cols = [cfg["start"] + cfg["step"] * k for k in range(cfg["count"])]

@@ -3,104 +3,129 @@
 # Changes: scaling, making sliders more sensitive (20 --> 30% max)
 # Compared to current version of Proforma_WebApp_V1.0.py: added incentive on/off buttons
 
+import os
 import streamlit as st
 import pandas as pd
 import altair as alt
 import requests
 
-from proforma import generate_gpt_tables
-
-st.set_page_config(layout="wide")
-
-import os
-
-# this script assumes that the proforma is working
-API_URL = os.getenv("API_URL", "http://proforma.media.mit.edu:50053")
-ENDPOINT = "simulate"
-# or your container/remote URL
-
-# Sliders. Change code here (specifically st.slider) when using the physical slider.
-
-from proforma import rank_to_profit
-
-
-def get_ranking_functions():
-    """Returns all ranking functions as a tuple for assignment to variables outside the function."""
-    # if st.session_state.toggle:
-    st.subheader("Affordable Housing (1 unit = 5 housing units)")
-    ranking_Housing_Affordable = st.slider(
-        "Subsidized Rent by 50%. Otherwise the same as a Market Rate Unit",
-        min_value=1,
-        max_value=10,
-        value=5,
-    )
-    st.write(
-        "Developer Compensation Rate: ",
-        round(rank_to_profit(ranking_Housing_Affordable) * 100, 2),
-        "%",
-    )
-
-    st.subheader("Grocery Store")
-    ranking_InBuilding_Grocery = st.slider(
-        "On-Site Grocery Store", min_value=1, max_value=10, value=5
-    )
-    st.write(
-        "Developer Compensation Rate: ",
-        round(rank_to_profit(ranking_InBuilding_Grocery) * 100, 2),
-        "%",
-    )
-
-    st.subheader("Community Center")
-    ranking_InBuilding_CommunityCenter = st.slider(
-        "Multipurpose rooms for community events: think cultural activities, workshops, etc.",
-        min_value=1,
-        max_value=10,
-        value=5,
-    )
-    st.write(
-        "Developer Compensation Rate: ",
-        round(rank_to_profit(ranking_InBuilding_CommunityCenter) * 100, 2),
-        "%",
-    )
-
-    st.subheader("Park/Plaza")
-    ranking_OffSite_ParkPlaza = st.slider(
-        "Off-site Public Area, Open Air Space", min_value=1, max_value=10, value=5
-    )
-    st.write(
-        "Developer Compensation Rate: ",
-        round(rank_to_profit(ranking_OffSite_ParkPlaza) * 100, 2),
-        "%",
-    )
-
-    st.subheader("Community Fund (1 unit = $100,000)")
-    ranking_Fund = st.slider(
-        "Fund for community improvements. Paid for in incremenets of $100,000.",
-        min_value=1,
-        max_value=10,
-        value=5,
-    )
-    st.write(
-        "Developer Compensation Rate: ",
-        round(rank_to_profit(ranking_Fund) * 100, 2),
-        "%",
-    )
-
-    return (
-        ranking_Housing_Affordable,
-        ranking_InBuilding_Grocery,
-        ranking_InBuilding_CommunityCenter,
-        ranking_OffSite_ParkPlaza,
-        ranking_Fund,
-    )
-
-
-from proforma import (  # is this needed?
+from proforma import (
+    generate_gpt_tables,
+    get_amenity_name,
+    AMENITY_NAME_LIST,
+    to_snake_case,
+    rank_to_profit,
     get_item_accounting_table,
     get_input_table,
     get_MRU_Add_table,
 )
 
+st.set_page_config(layout="wide")
+
+# this script assumes that the proforma is working
+# The code automatically converts between old/new field names for API compatibility
+# To use a local API server, set API_URL=http://localhost:8000 (or your local port)
+# To use the remote server, set API_URL=http://proforma.media.mit.edu:50053
+API_URL = os.getenv("API_URL", "http://proforma.media.mit.edu:50053")  # Default to remote
+ENDPOINT = "simulate"
+
+# Sliders. Change code here (specifically st.slider) when using the physical slider.
+
+# Mapping for API compatibility workaround (convert between new and old field names)
+# These maps are for backward compatibility with old API servers
+# The old names are hardcoded here, but new names come from proforma.AMENITY_NAMES
+OLD_TO_NEW_NAMES = {
+    "affordable_housing": get_amenity_name(1),
+    "grocery_store": get_amenity_name(2),
+    "community_center": get_amenity_name(3),
+    "park_plaza": get_amenity_name(4),
+    "fund": get_amenity_name(5),
+}
+
+NEW_TO_OLD_NAMES = {v: k for k, v in OLD_TO_NEW_NAMES.items()}
+
+# Also map the display names (what comes back in tables)
+OLD_TO_NEW_DISPLAY_NAMES = {
+    "Affordable Housing": get_amenity_name(1),
+    "Grocery Store": get_amenity_name(2),
+    "Community Center": get_amenity_name(3),
+    "Park/Plaza": get_amenity_name(4),
+    "Fund": get_amenity_name(5),
+}
+
+NEW_TO_OLD_DISPLAY_NAMES = {v: k for k, v in OLD_TO_NEW_DISPLAY_NAMES.items()}
+
+
+def convert_payload_to_old_names(payload: dict) -> dict:
+    """Convert payload with new amenity names to old names for API compatibility."""
+    converted = payload.copy()
+    if "rankings" in converted:
+        old_rankings = {}
+        for new_name, value in converted["rankings"].items():
+            old_name = NEW_TO_OLD_NAMES.get(new_name, new_name)
+            old_rankings[old_name] = value
+        converted["rankings"] = old_rankings
+    return converted
+
+
+def convert_response_from_old_names(data: dict) -> dict:
+    """Convert response data from old amenity names back to new names."""
+    converted = data.copy()
+    
+    # Convert irr_series_first6 and npv_series_first6
+    for key in ["irr_series_first6", "npv_series_first6"]:
+        if key in converted and isinstance(converted[key], dict):
+            new_dict = {}
+            for old_name, value in converted[key].items():
+                new_name = OLD_TO_NEW_DISPLAY_NAMES.get(old_name, old_name)
+                new_dict[new_name] = value
+            converted[key] = new_dict
+    
+    # Convert DataFrames in the response (final_build_table, etc.)
+    for table_key in ["final_build_table", "item_accounting_table", "input_table", "mru_add_table"]:
+        if table_key in converted and isinstance(converted[table_key], dict):
+            if "data" in converted[table_key] and "index" in converted[table_key]:
+                # Convert index names
+                converted[table_key] = converted[table_key].copy()
+                if "index" in converted[table_key]:
+                    converted[table_key]["index"] = [
+                        OLD_TO_NEW_DISPLAY_NAMES.get(name, name) 
+                        for name in converted[table_key]["index"]
+                    ]
+    
+    # Convert gpt_decision if present
+    if "gpt_decision" in converted and isinstance(converted["gpt_decision"], dict):
+        new_decision = {}
+        for old_name, value in converted["gpt_decision"].items():
+            # Try display names first (e.g., "Affordable Housing")
+            new_name = OLD_TO_NEW_DISPLAY_NAMES.get(old_name)
+            if new_name is None:
+                # Try API field names (e.g., "affordable_housing")
+                new_name = OLD_TO_NEW_NAMES.get(old_name, old_name)
+            new_decision[new_name] = value
+        converted["gpt_decision"] = new_decision
+    
+    return converted
+
+def get_ranking_functions():
+    """Returns all ranking functions as a tuple for assignment to variables outside the function."""
+    rankings = []
+    for i in range(1, 6):
+        amenity_name = get_amenity_name(i)
+        st.subheader(amenity_name)
+        ranking = st.slider(
+            amenity_name,
+            min_value=1,
+            max_value=10,
+            value=5,
+        )
+        st.write(
+            "Developer Compensation Rate: ",
+            round(rank_to_profit(ranking) * 100, 2),
+            "%",
+        )
+        rankings.append(ranking)
+    return tuple(rankings)
 
 def _first_six_irrs(
     df: pd.DataFrame,
@@ -115,20 +140,8 @@ def _first_six_irrs(
 def create_irr_chart(gpt_tables):
     """Creates and returns the IRR chart for all amenities."""
     IRR_first6 = pd.DataFrame(
-        [
-            _first_six_irrs(gpt_tables["Affordable Housing"]),
-            _first_six_irrs(gpt_tables["Grocery Store"]),
-            _first_six_irrs(gpt_tables["Community Center"]),
-            _first_six_irrs(gpt_tables["Park/Plaza"]),
-            _first_six_irrs(gpt_tables["Fund"]),
-        ],
-        index=[
-            "Affordable Housing",
-            "Grocery Store",
-            "Community Center",
-            "Park/Plaza",
-            "Fund",
-        ],
+        [_first_six_irrs(gpt_tables[name]) for name in AMENITY_NAME_LIST],
+        index=AMENITY_NAME_LIST,
         columns=[str(i) for i in range(6)],
     )
     IRR_first6_long = (  # chart is reformatted
@@ -164,20 +177,8 @@ def _first_six_npvs(df: pd.DataFrame) -> list[float]:
 def create_npv_chart(gpt_tables):
     """Creates and returns the NPV chart for all amenities."""
     NPV_first6 = pd.DataFrame(
-        [
-            _first_six_npvs(gpt_tables["Affordable Housing"]),
-            _first_six_npvs(gpt_tables["Grocery Store"]),
-            _first_six_npvs(gpt_tables["Community Center"]),
-            _first_six_npvs(gpt_tables["Park/Plaza"]),
-            _first_six_npvs(gpt_tables["Fund"]),
-        ],
-        index=[
-            "Affordable Housing",
-            "Grocery Store",
-            "Community Center",
-            "Park/Plaza",
-            "Fund",
-        ],
+        [_first_six_npvs(gpt_tables[name]) for name in AMENITY_NAME_LIST],
+        index=AMENITY_NAME_LIST,
         columns=[str(i) for i in range(6)],
     )
     NPV_first6_long = (
@@ -253,14 +254,8 @@ def input_stage():
         st.subheader("📊 Cumulative Progress So Far")
 
         # Aggregate built items from all previous rounds
-        cumulative_built = {
-            "Market Rate Housing": 0,
-            "Affordable Housing": 0,
-            "Grocery Store": 0,
-            "Community Center": 0,
-            "Park/Plaza": 0,
-            "Fund": 0,
-        }
+        cumulative_built = {"Market Rate Housing": 0}
+        cumulative_built.update({name: 0 for name in AMENITY_NAME_LIST})
 
         for result in st.session_state.game_results:
             for amenity, count in result["built_items"].items():
@@ -280,24 +275,13 @@ def input_stage():
 
     with col_sliders:
         # Call the ranking functions to get the sliders - all sliders render here
-        (
-            ranking_Housing_Affordable,
-            ranking_InBuilding_Grocery,
-            ranking_InBuilding_CommunityCenter,
-            ranking_OffSite_ParkPlaza,
-            ranking_Fund,
-        ) = get_ranking_functions()
+        ranking_values = get_ranking_functions()
 
     # Store the rankings for this round (outside columns so accessible later)
+    rankings_dict = {get_amenity_name(i): val for i, val in enumerate(ranking_values, 1)}
     round_rankings = {
         "round": st.session_state.current_round,
-        "rankings": {
-            "Affordable Housing": ranking_Housing_Affordable,
-            "Grocery Store": ranking_InBuilding_Grocery,
-            "Community Center": ranking_InBuilding_CommunityCenter,
-            "Park/Plaza": ranking_OffSite_ParkPlaza,
-            "Fund": ranking_Fund,
-        },
+        "rankings": rankings_dict,
     }
 
     st.session_state.current_rankings = round_rankings
@@ -336,42 +320,68 @@ def input_stage():
     # ================================
 
     if st.button("📊 View Results", type="primary", use_container_width=True):
-        mean_slider_value = (
-            ranking_Housing_Affordable
-            + ranking_InBuilding_Grocery
-            + ranking_InBuilding_CommunityCenter
-            + ranking_OffSite_ParkPlaza
-            + ranking_Fund
-        )
-
-        mean_slider_value /= 5.0
+        mean_slider_value = sum(ranking_values) / len(ranking_values)
+        
+        # Build payload using snake_case names for API
         payload = {
             "rankings": {
-                "affordable_housing": ranking_Housing_Affordable,
-                "grocery_store": ranking_InBuilding_Grocery,
-                "community_center": ranking_InBuilding_CommunityCenter,
-                "park_plaza": ranking_OffSite_ParkPlaza,
-                "fund": ranking_Fund,
+                to_snake_case(get_amenity_name(i)): val 
+                for i, val in enumerate(ranking_values, 1)
             },
             "eagerness": mean_slider_value,
             "gpt_decide": True,  # <— ask backend to have GPT decide
             "city": "San Francisco",
         }
-        resp = requests.post(f"{API_URL}/{ENDPOINT}", json=payload, timeout=60)
-        resp.raise_for_status()
+        
+        # Convert to old names for API compatibility (workaround)
+        api_payload = convert_payload_to_old_names(payload)
+        
+        try:
+            resp = requests.post(f"{API_URL}/{ENDPOINT}", json=api_payload, timeout=60)
+            if resp.status_code != 200:
+                try:
+                    error_detail = resp.json()
+                    st.error(f"API Error ({resp.status_code}): {error_detail}")
+                    st.write("**Payload sent (converted to old names):**")
+                    st.json(api_payload)
+                    st.write(f"**API URL:** {API_URL}")
+                    st.warning("⚠️ Make sure your API server is running the updated code with amenity_1-5 field names!")
+                    return
+                except Exception:
+                    st.error(f"API Error ({resp.status_code}): {resp.text}")
+                    return
+            resp.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            st.error(f"❌ Could not connect to API at {API_URL}")
+            st.info("💡 To run locally: Start the FastAPI server with `uvicorn src.service:app --reload`")
+            return
+        except requests.exceptions.HTTPError as e:
+            st.error(f"❌ HTTP Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                if e.response.status_code == 422:
+                    try:
+                        error_detail = e.response.json()
+                        st.error(f"Validation Error: {error_detail}")
+                        st.write("This usually means the API server expects different field names.")
+                        st.warning("⚠️ The API server may need to be updated with the new amenity names (amenity_1-5).")
+                    except Exception:
+                        st.warning("⚠️ 422 Validation Error - The API server likely expects different field names.")
+            return
         data = resp.json()
+        
+        # Convert response from old names back to new names (workaround)
+        data = convert_response_from_old_names(data)
 
         Item_Accounting_table = pd.DataFrame(**data["item_accounting_table"])
         Input_table = pd.DataFrame(**data["input_table"])
         MRU_Add_Table = pd.DataFrame(**data["mru_add_table"])
 
         Final_Build_Table = pd.DataFrame(**data["final_build_table"])
-        Master_Financial_Table = pd.DataFrame(**data["master_financial_table"])
         Final_Display = pd.DataFrame(**data["final_display"])
 
-        # Optional chart series:
-        irr_first6 = data["irr_series_first6"]
-        npv_first6 = data["npv_series_first6"]
+        # Optional chart series (not currently used but available for future use):
+        # irr_first6 = data["irr_series_first6"]
+        # npv_first6 = data["npv_series_first6"]
 
         # GPT outputs:
         gpt_decision = data.get("gpt_decision") or {}
@@ -381,17 +391,12 @@ def input_stage():
         built_items = {
             "Market Rate Housing": int(
                 Final_Build_Table.loc["Market Rate Housing", "Number"]
-            ),
-            "Affordable Housing": int(
-                Final_Build_Table.loc["Affordable Housing", "Number"]
-            ),
-            "Grocery Store": int(Final_Build_Table.loc["Grocery Store", "Number"]),
-            "Community Center": int(
-                Final_Build_Table.loc["Community Center", "Number"]
-            ),
-            "Park/Plaza": int(Final_Build_Table.loc["Park/Plaza", "Number"]),
-            "Fund": int(Final_Build_Table.loc["Fund", "Number"]),
+            )
         }
+        built_items.update({
+            name: int(Final_Build_Table.loc[name, "Number"])
+            for name in AMENITY_NAME_LIST
+        })
 
         round_result = {
             "round": st.session_state.current_round,
@@ -571,8 +576,6 @@ def end_screen():
         st.markdown("<h5 style='margin-top: 0;'>18.0%</h5>", unsafe_allow_html=True)
 
     # Prepare data for charts
-    rounds = list(range(1, total_rounds + 1))
-
     # Rankings data
     rankings_data = []
     for result in st.session_state.game_results:
@@ -649,15 +652,13 @@ def end_screen():
     with col2:
         if not built_df.empty:
             st.markdown("**Cumulative Items Built Over Time**")
-            # Dual-axis chart: housing (MRU, Affordable) on right axis; others on left
-            housing_items = ["Market Rate Housing", "Affordable Housing"]
-            other_items = ["Grocery Store", "Community Center", "Park/Plaza", "Fund"]
+            # Dual-axis chart: housing (MRU, first amenity) on right axis; others on left
+            housing_items = ["Market Rate Housing", get_amenity_name(1)]
+            other_items = [get_amenity_name(i) for i in range(2, 6)]
 
             left_layer = (
                 alt.Chart(built_df)
-                .transform_filter(
-                    alt.FieldOneOfPredicate(field="Amenity", oneOf=other_items)
-                )
+                .transform_filter(alt.FieldOneOfPredicate(field="Amenity", oneOf=other_items))
                 .mark_line(point=True)
                 .encode(
                     x=alt.X("Round:O", title="Round", axis=alt.Axis(labelAngle=0)),
@@ -669,9 +670,7 @@ def end_screen():
 
             right_layer = (
                 alt.Chart(built_df)
-                .transform_filter(
-                    alt.FieldOneOfPredicate(field="Amenity", oneOf=housing_items)
-                )
+                .transform_filter(alt.FieldOneOfPredicate(field="Amenity", oneOf=housing_items))
                 .mark_line(point=True)
                 .encode(
                     x=alt.X("Round:O", title="Round", axis=alt.Axis(labelAngle=0)),
