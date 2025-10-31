@@ -1,14 +1,7 @@
 import pandas as pd
 import numpy as np
 import numpy_financial as nf
-import requests
-import os
 import streamlit as st
-
-# this script assumes that the proforma is working
-API_URL = os.getenv("API_URL", "http://proforma.media.mit.edu:50053")
-ENDPOINT = "simulate"
-# or your container/remote URL
 
 # =============================================================================
 # CALCULATION FUNCTIONS
@@ -48,10 +41,10 @@ Discount_rate = 0.08
 Market_rent_sqft = 4
 Exit_value_multiple = 20
 
+
 def rank_to_profit(rank):
-    return (
-        rank * 0.2
-    )  
+    return rank * 0.2
+
 
 def get_item_accounting_table():
     """Creates and returns the Item Accounting Table with all calculations and scaling applied."""
@@ -346,6 +339,7 @@ def get_Final_Build_Table(Item_Accounting_table, Input_table, MRU_Add_Table):
             Item_Accounting_table.loc[i, "Size"] * Final_Build_Table.loc[i, "Number"]
         )
     return Final_Build_Table
+
 
 def get_Master_Financial_Table(Item_Accounting_table, Final_Build_Table):
     """Creates and returns the Master Financial Table with all calculations applied."""

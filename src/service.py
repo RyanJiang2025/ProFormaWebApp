@@ -23,6 +23,7 @@ from proforma import (
     MRU_count_initial,
 )
 
+
 def df_to_compact_csv(df: pd.DataFrame) -> str:
     cols = [str(c) for c in df.columns]
     lines = [",".join(["metric"] + cols)]
@@ -175,6 +176,7 @@ class DecideRequest(BaseModel):
     rankings: Rankings
     city: str = "San Francisco"
 
+
 # ======================
 # FastAPI App
 # ======================
@@ -192,6 +194,7 @@ app.add_middleware(
 def first6(df: pd.DataFrame, metric: str) -> list[float]:
     cols = sorted(df.columns)[:6]
     return [float(df.loc[metric, c]) for c in cols]
+
 
 @app.post("/simulate")
 def simulate(payload: SimulationRequest):
