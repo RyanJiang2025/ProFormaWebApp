@@ -5,8 +5,6 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-import numpy_financial as nf
 import altair as alt
 import requests
 
@@ -16,14 +14,15 @@ st.set_page_config(layout="wide")
 
 import os
 
-# # this script assumes that the proforma is working
-# API_URL = os.getenv("API_URL", "http://proforma.media.mit.edu:50053")
-# ENDPOINT = "simulate"
-# # or your container/remote URL
+# this script assumes that the proforma is working
+API_URL = os.getenv("API_URL", "http://proforma.media.mit.edu:50053")
+ENDPOINT = "simulate"
+# or your container/remote URL
 
 # Sliders. Change code here (specifically st.slider) when using the physical slider.
 
 from proforma import rank_to_profit
+
 
 def get_ranking_functions():
     """Returns all ranking functions as a tuple for assignment to variables outside the function."""
@@ -95,11 +94,13 @@ def get_ranking_functions():
         ranking_Fund,
     )
 
-from proforma import ( #is this needed?
+
+from proforma import (  # is this needed?
     get_item_accounting_table,
     get_input_table,
     get_MRU_Add_table,
 )
+
 
 def _first_six_irrs(
     df: pd.DataFrame,
@@ -654,7 +655,9 @@ def end_screen():
 
             left_layer = (
                 alt.Chart(built_df)
-                .transform_filter(alt.FieldOneOfPredicate(field="Amenity", oneOf=other_items))
+                .transform_filter(
+                    alt.FieldOneOfPredicate(field="Amenity", oneOf=other_items)
+                )
                 .mark_line(point=True)
                 .encode(
                     x=alt.X("Round:O", title="Round", axis=alt.Axis(labelAngle=0)),
@@ -666,7 +669,9 @@ def end_screen():
 
             right_layer = (
                 alt.Chart(built_df)
-                .transform_filter(alt.FieldOneOfPredicate(field="Amenity", oneOf=housing_items))
+                .transform_filter(
+                    alt.FieldOneOfPredicate(field="Amenity", oneOf=housing_items)
+                )
                 .mark_line(point=True)
                 .encode(
                     x=alt.X("Round:O", title="Round", axis=alt.Axis(labelAngle=0)),
