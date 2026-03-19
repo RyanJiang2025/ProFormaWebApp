@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+.env
+
+# VSCode
+.vscode/
+
+# OS junk
+.DS_Store
