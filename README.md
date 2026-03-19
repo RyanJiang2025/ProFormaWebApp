@@ -1,3 +1,5 @@
+
+
 # How to run locally
 
 ```
@@ -16,3 +18,7 @@ cd /home/shared/ProformaWebApp
 git pull
 docker compose down && docker compose build && docker compose up -d
 ```
+
+# Notes
+
+- use `proforma-api` branch for the Dynamic Zoning Slider table (https://github.com/amcarrero/frankeinstein-ui).
