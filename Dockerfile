@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy your project files into the image
 COPY . .
 
-# Expose the port FastAPI will run on
+# Expose the port Streamlit will run on
 EXPOSE 50053
 
-# Run FastAPI using uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "50053", "--reload"]
+# Run the Streamlit UI
+CMD ["streamlit", "run", "main.py", "--server.address", "0.0.0.0", "--server.port", "50053"]

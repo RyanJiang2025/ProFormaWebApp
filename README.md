@@ -1,87 +1,48 @@
-This project runs a FastAPI server inside a Docker container. Follow the steps below to build and run the application locally.
+This project runs a Streamlit-based pro forma planner inside a Docker container.
 
----
+## Prerequisites
 
-## 📦 Prerequisites
+Install [Docker](https://www.docker.com/get-started).
 
-Make sure you have the following installed:
+## Build the Docker Image
 
-* [Docker](https://www.docker.com/get-started)
-
----
-
-## 🏗️ Build the Docker Image
-
-Navigate to the root directory of this project (where the `Dockerfile` is located), then run:
+From the project root, run:
 
 ```bash
-docker build -t proforma-api .
+docker build -t proforma-planner .
 ```
 
----
+## Run the Container
 
-## ▶️ Run the Container
-
-Start the FastAPI server in a Docker container:
+Start the app with:
 
 ```bash
-docker run -d -p 50053:50053 \
-  -e OPENAI_API_KEY=your_api_key_here \
-  --name proforma-api \
-  proforma-api
+docker run -d -p 50053:50053 --name proforma-planner proforma-planner
 ```
 
----
+## Access the App
 
-## 🌐 Access the API
+Once the container is running, open:
 
-Once the container is running, you can access:
+`http://localhost:50053`
 
-* API root: http://localhost:50053
-* Interactive docs (Swagger UI): http://localhost:50053/docs
+## Development Tips
 
-
-## 🔐 Environment Variables
-
-This project requires an OpenAI API key.
-
-You can pass it using:
+For local development with a mounted source tree:
 
 ```bash
--e OPENAI_API_KEY=your_api_key_here
+docker run -p 50053:50053 -v $(pwd):/app proforma-planner streamlit run main.py --server.address 0.0.0.0 --server.port 50053
 ```
 
-Alternatively, use a `.env` file:
+## Notes
+
+- The container serves the Streamlit UI on port `50053`.
+- The app now uses a local mathematical decision engine instead of the old API/OpenAI flow.
+
+## Troubleshooting
+
+Check container logs with:
 
 ```bash
-docker run --env-file .env -p 50053:50053 fastapi-app
+docker logs proforma-planner
 ```
-
----
-
-## ⚠️ Notes
-
-* Do **not** commit your `.env` file or API keys to GitHub
-* The server runs on port `50053` inside the container
-* Make sure the port is not already in use on your machine
-
-## 🚀 Development Tips
-
-If you want live-reload during development:
-
-```bash
-docker run -p 50053:50053 -v $(pwd):/app fastapi-app \
-uvicorn main:app --host 0.0.0.0 --port 50053 --reload
-```
-
----
-
-## 📬 Questions
-
-If you run into issues, check logs first:
-
-```bash
-docker logs fastapi-container
-```
-
----
